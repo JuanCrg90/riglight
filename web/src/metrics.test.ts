@@ -15,6 +15,8 @@ describe('parseMetricSample', () => {
   });
 
   it.each([
+    { ...sample, sampledAt: '2026-01-01T00:00:00+00:00' },
+    { ...sample, cpu: { ...sample.cpu, sampledAt: '2026-01-01T00:00:00-05:00' } },
     { ...sample, schemaVersion: 2 },
     { ...sample, secret: 'private' },
     { ...sample, cpu: { ...sample.cpu, utilizationPercent: Infinity } },

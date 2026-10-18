@@ -22,7 +22,7 @@ export interface MetricSample {
 
 const MAX_BYTES = Number.MAX_SAFE_INTEGER;
 const validTime = (value: unknown): value is string =>
-  typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(value) &&
+  typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(value) &&
   Number.isFinite(Date.parse(value));
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);

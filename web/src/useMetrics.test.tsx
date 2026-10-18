@@ -51,6 +51,21 @@ describe('useMetrics', () => {
     expect(result.current.cpuFresh).toBe(false);
   });
 
+  it('accepts regressing envelope times and applies new metric states', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(frame('2026-02-01T00:00:00Z', 0)));
+    const regressed = frame('2025-12-31T23:59:59Z', 0);
+    regressed.memory = { status: 'UNAVAILABLE', sampledAt: null, ageMs: null, usedBytes: null, totalBytes: null };
+    act(() => source.send(regressed));
+    expect(result.current.sample?.sampledAt).toBe('2025-12-31T23:59:59Z');
+    expect(result.current.cpuFresh).toBe(true);
+    expect(result.current.sample?.memory.status).toBe('UNAVAILABLE');
+    expect(result.current.memoryFresh).toBe(false);
+  });
+
   it('uses server age regardless of clock skew and honors aged cached samples', () => {
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);

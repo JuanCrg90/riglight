@@ -20,7 +20,7 @@ export function useMetrics(): View {
   useEffect(() => {
     const source = new EventSource('/api/v1/events');
     let current: MetricSample | null = null;
-    let lastEnvelope = '';
+    const recentFrames = new Set<string>();
     let cpuExpiry = Number.NEGATIVE_INFINITY;
     let memoryExpiry = Number.NEGATIVE_INFINITY;
     let cpuFresh = false;
@@ -34,7 +34,15 @@ export function useMetrics(): View {
     const onError = () => { connection = 'RECONNECTING'; publish(); };
     const onSnapshot = (event: Event) => {
       const sample = parseMetricSample((event as MessageEvent<string>).data);
-      if (!sample || sample.sampledAt === lastEnvelope || (lastEnvelope && Date.parse(sample.sampledAt) <= Date.parse(lastEnvelope))) return;
+      if (!sample) return;
+      const frameKey = JSON.stringify([
+        sample.schemaVersion, sample.sampledAt, sample.mode,
+        sample.cpu.status, sample.cpu.sampledAt, sample.cpu.ageMs, sample.cpu.utilizationPercent,
+        sample.memory.status, sample.memory.sampledAt, sample.memory.ageMs, sample.memory.usedBytes, sample.memory.totalBytes,
+      ]);
+      if (recentFrames.has(frameKey)) return;
+      recentFrames.add(frameKey);
+      if (recentFrames.size > HISTORY_LIMIT) recentFrames.delete(recentFrames.values().next().value!);
       const monotonic = performance.now();
       // Server-computed age avoids comparing clocks on the host and browser.
       // A repeated metric timestamp may shorten, but never extend, its expiry.
@@ -50,7 +58,6 @@ export function useMetrics(): View {
         memoryFresh = monotonic < memoryExpiry;
       } else { memoryFresh = false; memoryExpiry = Number.NEGATIVE_INFINITY; }
       current = sample;
-      lastEnvelope = sample.sampledAt;
       cpuHistory = [...cpuHistory, { at: sample.sampledAt, value: sample.cpu.status === 'AVAILABLE' ? sample.cpu.utilizationPercent : null }].slice(-HISTORY_LIMIT);
       memoryHistory = [...memoryHistory, { at: sample.sampledAt, value: sample.memory.status === 'AVAILABLE' ? sample.memory.usedBytes! / sample.memory.totalBytes! * 100 : null }].slice(-HISTORY_LIMIT);
       connection = 'CONNECTED';
