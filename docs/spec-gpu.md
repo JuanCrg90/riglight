@@ -2,7 +2,8 @@
 
 Status: GPU scope approved by the owner after live CPU/RAM accuracy verification.
 The primary session owns the technical design and GPT-only Herdr coordination.
-This document defines the next bounded increment; no Docker or llama-swap work.
+This bounded increment is implemented; see [verification](verification-gpu.md).
+No Docker or llama-swap work is included.
 
 ## Objective
 

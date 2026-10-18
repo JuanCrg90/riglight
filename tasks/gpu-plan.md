@@ -1,7 +1,8 @@
 # Plan: read-only NVIDIA GPU monitoring
 
-Status: authorized GPU increment; scope chosen explicitly by the owner after
-CPU/RAM accuracy verification. Contract: `../docs/spec-gpu.md`.
+Status: completed and reviewed, with WebKit/Safari limits disclosed in
+[GPU verification](../docs/verification-gpu.md). Scope was chosen explicitly by
+the owner after CPU/RAM accuracy verification. Contract: `../docs/spec-gpu.md`.
 
 ## Sequence and ownership
 
