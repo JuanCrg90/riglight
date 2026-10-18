@@ -129,20 +129,48 @@ func validCPUCounters(value cpuCounters) bool {
 }
 
 func aggregateUtilization(previous, current cpuCounters) (float64, bool) {
-	user := counterDelta(previous.user, current.user)
-	nice := counterDelta(previous.nice, current.nice)
-	system := counterDelta(previous.system, current.system)
-	idle := counterDelta(previous.idle, current.idle)
-	iowait := counterDelta(previous.iowait, current.iowait)
-	irq := counterDelta(previous.irq, current.irq)
-	softirq := counterDelta(previous.softirq, current.softirq)
-	steal := counterDelta(previous.steal, current.steal)
-	guest := counterDelta(previous.guest, current.guest)
-	guestNice := counterDelta(previous.guestNice, current.guestNice)
+	user, ok := counterDelta(previous.user, current.user)
+	if !ok {
+		return 0, false
+	}
+	nice, ok := counterDelta(previous.nice, current.nice)
+	if !ok {
+		return 0, false
+	}
+	system, ok := counterDelta(previous.system, current.system)
+	if !ok {
+		return 0, false
+	}
+	idle, ok := counterDelta(previous.idle, current.idle)
+	if !ok {
+		return 0, false
+	}
+	iowait, ok := counterDelta(previous.iowait, current.iowait)
+	if !ok {
+		return 0, false
+	}
+	irq, ok := counterDelta(previous.irq, current.irq)
+	if !ok {
+		return 0, false
+	}
+	softirq, ok := counterDelta(previous.softirq, current.softirq)
+	if !ok {
+		return 0, false
+	}
+	steal, ok := counterDelta(previous.steal, current.steal)
+	if !ok {
+		return 0, false
+	}
+	if _, ok := counterDelta(previous.guest, current.guest); !ok {
+		return 0, false
+	}
+	if _, ok := counterDelta(previous.guestNice, current.guestNice); !ok {
+		return 0, false
+	}
 
-	// Linux accounts guest time in user and guest-nice time in nice. Exclude it
-	// from the aggregate total to avoid double counting, as gopsutil does.
-	total := user + nice + system + idle + iowait + irq + softirq + steal - guest - guestNice
+	// Linux already includes guest in user and guest-nice in nice. Sum the
+	// eight non-guest counters once; guest counters only detect resets.
+	total := user + nice + system + idle + iowait + irq + softirq + steal
 	busy := total - idle - iowait
 	if total <= 0 || busy < 0 || busy > total {
 		return 0, false
@@ -154,11 +182,11 @@ func aggregateUtilization(previous, current cpuCounters) (float64, bool) {
 	return utilization, true
 }
 
-func counterDelta(previous, current float64) float64 {
-	if current <= previous {
-		return 0
+func counterDelta(previous, current float64) (float64, bool) {
+	if current < previous {
+		return 0, false
 	}
-	return current - previous
+	return current - previous, true
 }
 
 func validMemoryReading(reading memoryReading) bool {
