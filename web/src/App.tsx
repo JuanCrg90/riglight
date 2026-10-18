@@ -15,7 +15,7 @@ export function App() {
       <section id="main" className="overview" aria-labelledby="page-title">
         <p className="eyebrow">READ-ONLY HOST MONITOR</p>
         <h1 id="page-title">System overview</h1>
-        <p className="lede">CPU, memory and optional GPU telemetry.</p>
+        <p className="lede">Private workstation telemetry, with optional read-only integrations.</p>
         {hasSample ? <>
           <p className="mode-label">{sample.mode} MODE</p>
           <div className="metric-row">

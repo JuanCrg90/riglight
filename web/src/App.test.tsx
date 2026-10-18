@@ -50,11 +50,11 @@ describe('dashboard shell', () => {
     expect(screen.getByRole('region', { name: 'Memory used' })).toHaveTextContent('7.5 / 14.9 GiB');
   });
 
-  it('describes current read-only CPU, memory, and optional GPU coverage', () => {
+  it('describes generic private workstation telemetry', () => {
     vi.stubGlobal('EventSource', class { addEventListener() {} removeEventListener() {} close() {} });
     render(<App />);
     expect(screen.getByText('READ-ONLY HOST MONITOR')).toBeVisible();
-    expect(screen.getByText('CPU, memory and optional GPU telemetry.')).toBeVisible();
+    expect(screen.getByText('Private workstation telemetry, with optional read-only integrations.')).toBeVisible();
   });
 
   it('describes the pending state without inventing telemetry', () => {
