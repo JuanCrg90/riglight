@@ -15,28 +15,36 @@ import (
 var errInvalidConfig = errors.New("invalid server configuration")
 
 type Config struct {
-	Hub           *metrics.Hub
-	AllowedHost   string
-	AllowedOrigin string
-	Now           func() time.Time
-	Context       context.Context
-	Assets        fs.FS
+	Hub               *metrics.Hub
+	AllowedHost       string
+	AllowedOrigin     string
+	AdditionalOrigins []string
+	Now               func() time.Time
+	Context           context.Context
+	Assets            fs.FS
 }
 
 // Server serves only the milestone-one health and sample APIs.
 type Server struct {
-	hub           *metrics.Hub
-	allowedHost   string
-	allowedOrigin string
-	now           func() time.Time
-	context       context.Context
-	assets        fs.FS
-	streamSlots   chan struct{}
+	hub            *metrics.Hub
+	allowedHost    string
+	allowedOrigins map[string]struct{}
+	now            func() time.Time
+	context        context.Context
+	assets         fs.FS
+	streamSlots    chan struct{}
 }
 
 func New(config Config) (*Server, error) {
 	if config.Hub == nil || validateAuthority(config.AllowedHost) != nil || validateOrigin(config.AllowedOrigin, config.AllowedHost) != nil {
 		return nil, errInvalidConfig
+	}
+	allowedOrigins := map[string]struct{}{config.AllowedOrigin: {}}
+	for _, origin := range config.AdditionalOrigins {
+		if validateAdditionalOrigin(origin) != nil {
+			return nil, errInvalidConfig
+		}
+		allowedOrigins[origin] = struct{}{}
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -53,13 +61,13 @@ func New(config Config) (*Server, error) {
 		}
 	}
 	return &Server{
-		hub:           config.Hub,
-		allowedHost:   config.AllowedHost,
-		allowedOrigin: config.AllowedOrigin,
-		now:           config.Now,
-		context:       config.Context,
-		assets:        assets,
-		streamSlots:   make(chan struct{}, maxSSEClients),
+		hub:            config.Hub,
+		allowedHost:    config.AllowedHost,
+		allowedOrigins: allowedOrigins,
+		now:            config.Now,
+		context:        config.Context,
+		assets:         assets,
+		streamSlots:    make(chan struct{}, maxSSEClients),
 	}, nil
 }
 

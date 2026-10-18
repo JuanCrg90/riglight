@@ -18,11 +18,26 @@ func validateAuthority(authority string) error {
 }
 
 func validateOrigin(origin, authority string) error {
-	parsed, err := url.ParseRequestURI(origin)
-	if err != nil || parsed.Scheme != "http" || parsed.Host != authority || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+	parsed, err := parseOrigin(origin)
+	if err != nil || parsed.Host != authority {
 		return errInvalidConfig
 	}
 	return nil
+}
+
+func validateAdditionalOrigin(origin string) error {
+	if _, err := parseOrigin(origin); err != nil {
+		return errInvalidConfig
+	}
+	return nil
+}
+
+func parseOrigin(origin string) (*url.URL, error) {
+	parsed, err := url.ParseRequestURI(origin)
+	if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, errInvalidConfig
+	}
+	return parsed, nil
 }
 
 func (s *Server) secure(w http.ResponseWriter, request *http.Request) bool {
@@ -32,7 +47,7 @@ func (s *Server) secure(w http.ResponseWriter, request *http.Request) bool {
 		return false
 	}
 	origins := request.Header.Values("Origin")
-	if len(origins) > 1 || (len(origins) == 1 && origins[0] != s.allowedOrigin) {
+	if len(origins) > 1 || (len(origins) == 1 && !s.originAllowed(origins[0])) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden")
 		return false
 	}
@@ -45,6 +60,11 @@ func validRequestInput(w http.ResponseWriter, request *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func (s *Server) originAllowed(origin string) bool {
+	_, ok := s.allowedOrigins[origin]
+	return ok
 }
 
 func setSecurityHeaders(header http.Header) {

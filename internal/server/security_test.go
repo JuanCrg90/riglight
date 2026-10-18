@@ -2,7 +2,10 @@ package server
 
 import (
 	"net/http"
+	"time"
+
 	"net/http/httptest"
+	"riglight/internal/metrics"
 	"strings"
 	"testing"
 )
@@ -71,6 +74,39 @@ func TestSecurityAllowsMissingOrExactOrigin(t *testing.T) {
 		server.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Errorf("Origin %q status = %d, want %d", origin, response.Code, http.StatusOK)
+		}
+	}
+}
+
+func TestSecurityAllowsOnlyConfiguredAdditionalOrigin(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	hub, err := metrics.NewHub(testSample(at))
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	defer hub.Close()
+	server, err := New(Config{
+		Hub:               hub,
+		AllowedHost:       "127.0.0.1:9090",
+		AllowedOrigin:     "http://127.0.0.1:9090",
+		AdditionalOrigins: []string{"http://127.0.0.1:5173"},
+		Now:               func() time.Time { return at },
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+	for origin, want := range map[string]int{
+		"http://127.0.0.1:5173": http.StatusOK,
+		"http://localhost:5173": http.StatusForbidden,
+	} {
+		request := allowedRequest(http.MethodGet, "/healthz")
+		request.Header.Set("Origin", origin)
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != want {
+			t.Errorf("Origin %q status = %d, want %d", origin, response.Code, want)
 		}
 	}
 }
