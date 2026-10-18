@@ -1,13 +1,14 @@
 # Third-party notices
 
-This file records the production dependencies whose required notices were
-verified for the current milestone-1 dependency baseline. Preserve these
-attributions and license terms when redistributing the application. This is
-not a complete inventory of transitive Go or frontend dependencies.
+This file records the verified licenses for the current frontend runtime
+packages. Preserve these attributions and license terms when redistributing the
+application. The Go production dependency graph is not yet available, so this
+is not the complete application notice inventory.
 
-## React and React DOM
+## React, React DOM, and scheduler
 
-React and React DOM 19.3.1 are distributed under the MIT License.
+React 19.3.1, React DOM 19.3.1, and scheduler 0.28.0 are distributed under
+the MIT License. `react-dom` depends on `scheduler`.
 
 ```text
 MIT License
@@ -33,15 +34,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Remaining notice audit
+## Verified frontend sources
 
-The frontend dependency tree and complete Go module graph were not available in
-the assigned documentation checkout, so the final production dependency set and
-all required notices cannot yet be confirmed. The implementation owner must
-inspect the resolved, distributable frontend and Go dependency graphs (including
-transitives such as `scheduler` and `gopsutil`), copy every required copyright
-and license notice from the actual versions, and update this document before
-release. The reviewed plan identifies gopsutil's BSD-3-Clause-style license
-and an upstream Go-derived notice; retain all required upstream terms. Do not
-infer legal completeness from direct dependency manifests or this partial
-inventory.
+The package names and versions above were read from the installed package
+manifests and their `LICENSE` files in the resolved frontend dependency tree.
+The three packages carry identical MIT text reproduced above. `scheduler` is
+a production transitive dependency of `react-dom`, not a development tool.
+
+## Remaining Go notice audit
+
+The assigned backend checkout currently has only `module riglight` and the Go
+version in `go.mod`; it has no `go.sum` or external module requirements. Thus
+the final Go production dependency graph cannot yet be established. After the
+backend adds its pinned gopsutil dependency, inspect the resolved Go module graph
+and each shipped production dependency's license/copyright files, including
+transitives; add their required notices here before release. The reviewed plan
+identifies gopsutil/v4 v4.26.9 as BSD-3-Clause-style and notes a Go-derived
+notice; preserve the actual upstream terms and attribution. Do not infer legal
+completeness from planned versions or direct requirements.
