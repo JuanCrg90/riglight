@@ -1,6 +1,6 @@
 # Spec: Riglight
 
-Status: Approved for milestone 1; implementation plan/task review pending.
+Status: Approved for milestone 1; GPT-only Herdr implementation authorized.
 
 ## Objective
 
@@ -41,6 +41,8 @@ logs without exposing the workstation publicly.
 - CPU aggregate utilization and RAM used/total, updated every two seconds.
 - One shared collector per host, independent of how many browsers connect.
 - Initial snapshot plus a same-origin SSE feed; refresh and reconnect work.
+  Per-metric age is computed from server-monotonic collection time at send time;
+  browser-monotonic elapsed time drives freshness without synchronized clocks.
 - Connected, reconnecting, stale, and unavailable states. Missing data must never
   be presented as healthy zeroes. Stale means no valid sample for six seconds.
 - Short rolling charts bounded to 450 samples (15 minutes at two seconds) in

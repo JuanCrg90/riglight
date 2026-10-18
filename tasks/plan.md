@@ -124,11 +124,13 @@ Do not serialize whole gopsutil structs.
   "cpu": {
     "status": "AVAILABLE",
     "sampledAt": "2026-01-01T00:00:02Z",
+    "ageMs": 0,
     "utilizationPercent": 42.5
   },
   "memory": {
     "status": "AVAILABLE",
     "sampledAt": "2026-01-01T00:00:02Z",
+    "ageMs": 0,
     "usedBytes": 8589934592,
     "totalBytes": 17179869184
   }
@@ -136,7 +138,11 @@ Do not serialize whole gopsutil structs.
 ```
 
 Mode is DEMO or LIVE. Metric status is NOT_READY, AVAILABLE, or UNAVAILABLE.
-For a non-AVAILABLE metric, its sampledAt and all measurement fields are null.
+For a non-AVAILABLE metric, its sampledAt, ageMs, and measurements are null.
+For AVAILABLE metrics, ageMs is a finite, nonnegative safe-integer number of
+milliseconds since collection, computed by the server at snapshot/SSE frame
+serialization from its retained monotonic collection timestamp. Do not cache a
+wire age at publication or derive it from browser time or reparsed wall time.
 Envelope sampledAt records the attempt, not a promise of successful measurement.
 Errors are `{ "error": { "code": "...", "message": "..." } }` with stable generic
 codes: INVALID_REQUEST (400), FORBIDDEN (403), NOT_FOUND (404),
@@ -154,11 +160,12 @@ parameter is required by any milestone-1 endpoint.
   onerror shows reconnecting; native EventSource handles reconnect attempts.
 - Validate schema/version before accepting a frame. Unknown/invalid frames do
   not advance freshness. A failed metric is visibly unavailable immediately.
-- Track freshness for each metric using monotonic browser elapsed time since a
-  distinct valid sample arrived. Replayed identical timestamps do not reset the
-  timer. Account for sample age when first received and on reconnection; a cached
-  initial frame must not make old data appear fresh. Treat future or implausible
-  timestamps conservatively and test clock skew explicitly.
+- Track per-metric freshness as server ageMs at receipt plus monotonic browser
+  elapsed time since receipt. Use sampledAt for display/deduplication, never
+  subtract it from the browser wall clock. Replayed identical timestamps may
+  shorten but never extend the current expiry. A cached initial/reconnect frame
+  already six seconds old is immediately stale. Test browser clock skew in both
+  directions and server-monotonic sample age increasing without publication.
 - After six seconds without fresh valid metric data, mark its prior value stale.
   A lack of any successful value displays unavailable/pending, not zero.
 - Append once per distinct sample, maintain at most 450 samples, and represent
@@ -277,8 +284,11 @@ Independent Gemini 3.8 Flash medium review was attempted but timed out after
 240 seconds without a result. Its stderr also warned that combining plan mode
 with disabled slash expansion negated plan mode; do not reuse that combination.
 No reviewer process remained after timeout and no unexpected project edits were
-observed. No independent findings or approval are claimed. A future retry should
-use effective plan mode without that incompatible flag, with an explicit timeout.
+observed. No independent findings or approval were claimed from that attempt. A later
+independent GPT-6 Luna high review completed under the owner's GPT-only policy;
+its high-severity clock-skew/sample-age finding was accepted. The contract now
+requires dynamically serialized, server-monotonic ageMs on each metric and a
+browser-monotonic expiry that duplicate samples cannot extend.
 
 ## Authorized execution
 
