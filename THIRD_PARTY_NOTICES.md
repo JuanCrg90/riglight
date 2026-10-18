@@ -189,3 +189,17 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+### NVIDIA/go-nvml v0.13.4-1 — Apache License 2.0 and NVIDIA header notice
+
+The Linux production build links `github.com/NVIDIA/go-nvml` v0.13.4-1. Its
+Apache-2.0 license is reproduced verbatim in
+[`LICENSES/NVIDIA-go-nvml.txt`](LICENSES/NVIDIA-go-nvml.txt). The NVML header
+source carries NVIDIA's copyright, disclaimer, and U.S. Government End Users
+notice; that complete initial notice block is reproduced verbatim in
+[`LICENSES/NVIDIA-NVML-header.txt`](LICENSES/NVIDIA-NVML-header.txt). Preserve
+both notices when redistributing.
+
+The backend's Linux production package graph also links `github.com/ebitengine/purego`
+v0.11.1 through NVML's loader. Its Apache-2.0 license is reproduced verbatim in
+[`LICENSES/purego-Apache-2.0.txt`](LICENSES/purego-Apache-2.0.txt).

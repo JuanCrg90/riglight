@@ -93,3 +93,23 @@ repository owner's intentionally selected existing identity.
 Riglight is licensed under the [MIT License](LICENSE). See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency attribution and
 license notices.
+
+## Optional GPU monitoring
+
+The approved GPU increment adds opt-in, read-only monitoring of physical NVIDIA
+devices. Start with `--gpu` to enable collection; GPU collection is disabled by
+default. `--demo --gpu` uses synthetic GPU data without initializing NVML, while
+`--demo` alone keeps GPU collection disabled. GPU support is limited to 16
+devices; excess inventory is marked truncated. Only numeric indices and
+allowlisted measurements are exposed—no hardware identifiers, process details,
+or GPU history.
+
+GPU collection requires Linux and cgo. Builds without cgo or on unsupported
+platforms retain CPU/demo operation and report GPU support as unsupported. A
+working GPU driver is not required to compile. Native driver calls cannot be
+safely canceled: a blocked GPU call is isolated from CPU collection, but
+shutdown has a shared five-second wait budget and cannot guarantee recovery from
+every driver hang.
+
+See [GPU API details](docs/api.md#gpu-snapshot), [security policy](SECURITY.md),
+and [third-party notices](THIRD_PARTY_NOTICES.md).
