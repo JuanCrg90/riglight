@@ -153,4 +153,8 @@ Native collection requires Linux and cgo; unsupported builds retain CPU/demo
 operation. Demo with `--gpu` is wholly synthetic and does not initialize NVML.
 Native driver calls cannot safely be canceled; GPU collection is isolated from
 CPU collection, and shutdown uses a shared bounded five-second wait rather than
-unsafe concurrent library unload.
+unsafe concurrent library unload. Native initialization is attempted once per
+process; if it fails, the generic unsupported/unavailable outcome is retained
+and a process restart is required to retry. Successful initialization polls
+sensors every two seconds. Riglight does not install or modify drivers or make
+other system changes.

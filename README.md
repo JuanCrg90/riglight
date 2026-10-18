@@ -109,7 +109,11 @@ platforms retain CPU/demo operation and report GPU support as unsupported. A
 working GPU driver is not required to compile. Native driver calls cannot be
 safely canceled: a blocked GPU call is isolated from CPU collection, but
 shutdown has a shared five-second wait budget and cannot guarantee recovery from
-every driver hang.
+every driver hang. Native initialization is attempted only once per process; if
+it fails, Riglight retains a generic unsupported/unavailable result and requires
+a restart to retry. After successful initialization, sensors are polled every
+two seconds. Riglight does not install, upgrade, or otherwise change drivers or
+system configuration.
 
 See [GPU API details](docs/api.md#gpu-snapshot), [security policy](SECURITY.md),
 and [third-party notices](THIRD_PARTY_NOTICES.md).
