@@ -44,4 +44,3 @@ function Reading({ label, metric, fresh, format, value }: { label: string; metri
     <span className="gpu-reading-state" data-state={state}>{state}</span>
   </div>;
 }
-
