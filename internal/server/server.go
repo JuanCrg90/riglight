@@ -58,17 +58,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 
 	switch request.URL.Path {
 	case "/healthz":
-		if !requireGet(w, request) {
+		if !requireGet(w, request) || !validRequestInput(w, request) {
 			return
 		}
 		s.health(w)
 	case "/api/v1/snapshot":
-		if !requireGet(w, request) {
+		if !requireGet(w, request) || !validRequestInput(w, request) {
 			return
 		}
 		s.snapshot(w)
 	case "/api/v1/events":
-		if !requireGet(w, request) {
+		if !requireGet(w, request) || !validRequestInput(w, request) {
 			return
 		}
 		s.events(w, request)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,6 +59,43 @@ func TestRoutesRejectUnsupportedMethodsWithAllowHeader(t *testing.T) {
 		if got := response.Header().Get("Allow"); got != http.MethodGet {
 			t.Errorf("POST %s Allow = %q, want GET", path, got)
 		}
+	}
+}
+
+func TestMethodGuardPrecedesRequestBodyValidation(t *testing.T) {
+	t.Parallel()
+
+	server := newTestServer(t)
+	request := allowedRequest(http.MethodPost, "/api/v1/snapshot")
+	request.Body = io.NopCloser(strings.NewReader("ignored"))
+	request.ContentLength = int64(len("ignored"))
+	response := httptest.NewRecorder()
+
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+	if got := response.Header().Get("Allow"); got != http.MethodGet {
+		t.Errorf("Allow = %q, want GET", got)
+	}
+}
+
+func TestAPIRejectsUnknownLengthGetBody(t *testing.T) {
+	t.Parallel()
+
+	server := newTestServer(t)
+	request := allowedRequest(http.MethodGet, "/api/v1/snapshot")
+	request.Body = io.NopCloser(strings.NewReader("ignored"))
+	request.ContentLength = -1
+	request.TransferEncoding = nil
+	response := httptest.NewRecorder()
+
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if got := response.Body.String(); !strings.Contains(got, `"code":"INVALID_REQUEST"`) {
+		t.Errorf("response = %s, want INVALID_REQUEST", got)
 	}
 }
 
