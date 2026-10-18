@@ -1,6 +1,7 @@
 # Spec: optional llama-swap inventory
 
-Status: owner approved this increment after accepting GPU monitoring. They chose
+Status: implemented and reviewed; see [verification](verification-models.md).
+The owner approved this increment after accepting GPU monitoring. They chose
 inventory/lifecycle only, loopback access and no authentication. Logs remain out
 of scope. Actual instance details and probe responses stay private/ignored.
 
@@ -25,9 +26,13 @@ Use only test-owned separate loopback listeners.
 Official reference: mostlygeek/llama-swap public release v265 and source commit
 `a2796fb0306215c6883454a8707dfb22d25c3068`. Public source for the configured
 instance's release was checked separately without publishing that installation's
-version/configuration. A private bounded read-only probe confirmed inventory and
-coarse status shape; no aliases, counts, metadata or actual readings were kept
-in public files. No need to import upstream's Go module or copy its code.
+version/configuration. After the owner configured the service, the primary's
+pre-implementation discovery used bounded GET /health and /api/version probes
+solely to establish access and locate matching public release source. These
+one-off research probes are not runtime collector permissions. A private
+bounded GET /v1/models probe confirmed inventory/coarse status shape; no aliases,
+counts, metadata or actual readings were kept in public files. No need to
+import upstream's Go module or copy its code.
 
 - https://github.com/mostlygeek/llama-swap/blob/a2796fb0306215c6883454a8707dfb22d25c3068/internal/server/api.go
 - https://github.com/mostlygeek/llama-swap/blob/a2796fb0306215c6883454a8707dfb22d25c3068/internal/server/apigroup.go
@@ -35,7 +40,7 @@ in public files. No need to import upstream's Go module or copy its code.
 - https://pkg.go.dev/net/http#Client
 - https://pkg.go.dev/net/http#Transport
 
-Use only `GET /v1/models`, projecting `data[].id` and `data[].status.value`.
+The runtime integration must use only `GET /v1/models`, projecting `data[].id` and `data[].status.value`.
 Ignore/discard other upstream fields, never forward raw responses or diagnostics.
 The source includes optional metadata; it must not enter application DTOs/logs.
 Do NOT call `/running`: its objects include cmd/proxy metadata. Do NOT subscribe
