@@ -126,7 +126,7 @@ type upstreamEnvelope struct {
 }
 
 type upstreamModel struct {
-	ID     string `json:"id"`
+	ID     json.RawMessage `json:"id"`
 	Status struct {
 		Value *string `json:"value"`
 	} `json:"status"`
@@ -146,15 +146,23 @@ func decodeModels(body []byte) ([]Model, bool) {
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, false
 	}
-	var upstream []upstreamModel
-	if err := json.Unmarshal(envelope.Data, &upstream); err != nil {
+	var rows []json.RawMessage
+	if err := json.Unmarshal(envelope.Data, &rows); err != nil {
 		return nil, false
 	}
-	models := make([]Model, len(upstream))
-	for index, model := range upstream {
-		models[index] = Model{ID: model.ID, State: StateUnknown}
-		if model.Status.Value != nil {
-			switch *model.Status.Value {
+	models := make([]Model, len(rows))
+	for index, row := range rows {
+		var upstream upstreamModel
+		if err := json.Unmarshal(row, &upstream); err != nil || !validJSONStringUnicode(upstream.ID) {
+			return nil, false
+		}
+		var id string
+		if err := json.Unmarshal(upstream.ID, &id); err != nil {
+			return nil, false
+		}
+		models[index] = Model{ID: id, State: StateUnknown}
+		if upstream.Status.Value != nil {
+			switch *upstream.Status.Value {
 			case "loaded":
 				models[index].State = StateLoaded
 			case "unloaded":
@@ -163,4 +171,71 @@ func decodeModels(body []byte) ([]Model, bool) {
 		}
 	}
 	return models, true
+}
+
+// validJSONStringUnicode rejects unpaired UTF-16 surrogate escapes before
+// encoding/json can replace them with U+FFFD. It deliberately accepts literal
+// U+FFFD and escaped backslashes, which are handled separately by ID policy.
+func validJSONStringUnicode(raw json.RawMessage) bool {
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return false
+	}
+	end := len(raw) - 1
+	for index := 1; index < end; {
+		if raw[index] != '\\' {
+			index++
+			continue
+		}
+		if index+1 >= end {
+			return false
+		}
+		if raw[index+1] != 'u' {
+			index += 2
+			continue
+		}
+		if index+6 > end {
+			return false
+		}
+		value, ok := unicodeEscape(raw[index+2 : index+6])
+		if !ok {
+			return false
+		}
+		if value >= 0xD800 && value <= 0xDBFF {
+			if index+12 > end || raw[index+6] != '\\' || raw[index+7] != 'u' {
+				return false
+			}
+			low, ok := unicodeEscape(raw[index+8 : index+12])
+			if !ok || low < 0xDC00 || low > 0xDFFF {
+				return false
+			}
+			index += 12
+			continue
+		}
+		if value >= 0xDC00 && value <= 0xDFFF {
+			return false
+		}
+		index += 6
+	}
+	return true
+}
+
+func unicodeEscape(raw []byte) (uint16, bool) {
+	if len(raw) != 4 {
+		return 0, false
+	}
+	var value uint16
+	for _, character := range raw {
+		value <<= 4
+		switch {
+		case character >= '0' && character <= '9':
+			value += uint16(character - '0')
+		case character >= 'a' && character <= 'f':
+			value += uint16(character-'a') + 10
+		case character >= 'A' && character <= 'F':
+			value += uint16(character-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return value, true
 }

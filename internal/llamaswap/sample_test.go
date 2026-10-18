@@ -116,6 +116,37 @@ func TestSamplesValidateModesReasonsAndOwnership(t *testing.T) {
 	}
 }
 
+func TestMarshalCanonicalizesNilModelListsWithoutPrivateFields(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	available, err := NewAvailableSample(at, at, ModeLive, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sample := range []Sample{
+		DisabledSample(at),
+		NotReadySample(at, ModeLive),
+		UnavailableSample(at, ModeLive, ReasonQueryFailed),
+		UnsupportedSample(at, ModeLive),
+		available,
+	} {
+		sample.Models = nil
+		body, err := sample.MarshalAt(at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), `"models":[]`) {
+			t.Errorf("models were not an array: %s", body)
+		}
+		for _, forbidden := range []string{"completedAt", "inner", "endpoint"} {
+			if strings.Contains(string(body), forbidden) {
+				t.Errorf("wire body leaked %q: %s", forbidden, body)
+			}
+		}
+	}
+}
+
 func TestDemoSampleIsSyntheticAndAvailable(t *testing.T) {
 	t.Parallel()
 

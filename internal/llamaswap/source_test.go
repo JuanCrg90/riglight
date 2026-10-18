@@ -2,6 +2,7 @@ package llamaswap
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -68,6 +69,50 @@ func TestHTTPSourceProjectsOnlyAllowedFieldsAndStates(t *testing.T) {
 		if strings.Contains(string(body), forbidden) {
 			t.Errorf("wire body leaked %q: %s", forbidden, body)
 		}
+	}
+}
+
+func TestHTTPSourceRejectsLossyEscapedIdentifierUnicode(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		id   string
+		want string
+	}{
+		{"lone high surrogate", `"\uD800"`, ""},
+		{"lone low surrogate", `"\uDC00"`, ""},
+		{"high followed by high", `"\uD800\uD801"`, ""},
+		{"paired astral unicode", `"org/\uD83D\uDE00"`, "org/😀"},
+		{"literal replacement unicode", `"org/�"`, "org/�"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				_, _ = io.WriteString(w, `{"data":[{"id":`+test.id+`,"status":{"value":"loaded"}}]}`)
+			}))
+			defer fixture.Close()
+			source, err := NewHTTPSource(fixture.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sample, err := source.Collect(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.want == "" {
+				if sample.Status != OverviewUnavailable || sample.ReasonCode == nil || *sample.ReasonCode != ReasonInvalidResponse {
+					t.Errorf("sample = %#v", sample)
+				}
+				return
+			}
+			if sample.Status != OverviewAvailable || len(sample.Models) != 1 || sample.Models[0].ID != test.want {
+				t.Errorf("sample = %#v, want id %q", sample, test.want)
+			}
+		})
+	}
+
+	if !validJSONStringUnicode(json.RawMessage(`"model\\uD800"`)) {
+		t.Error("escaped literal backslash-u was treated as a surrogate escape")
 	}
 }
 

@@ -188,7 +188,11 @@ func (s Sample) MarshalAt(now time.Time) ([]byte, error) {
 		IsTruncated   bool           `json:"isTruncated"`
 		Models        []Model        `json:"models"`
 	}
-	return json.Marshal(wireSample{SchemaVersion: s.SchemaVersion, SampledAt: s.SampledAt.UTC(), Mode: s.Mode, Status: s.Status, ReasonCode: s.ReasonCode, AgeMS: ageMS(now, s.completedAt, s.Status == OverviewAvailable), IsTruncated: s.IsTruncated, Models: s.Models})
+	models := s.Models
+	if len(models) == 0 {
+		models = []Model{}
+	}
+	return json.Marshal(wireSample{SchemaVersion: s.SchemaVersion, SampledAt: s.SampledAt.UTC(), Mode: s.Mode, Status: s.Status, ReasonCode: s.ReasonCode, AgeMS: ageMS(now, s.completedAt, s.Status == OverviewAvailable), IsTruncated: s.IsTruncated, Models: models})
 }
 
 func validMode(mode Mode) bool { return mode == ModeDisabled || mode == ModeDemo || mode == ModeLive }
