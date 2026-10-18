@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"riglight/internal/gpu"
+	"riglight/internal/llamaswap"
 	"riglight/internal/metrics"
 )
 
@@ -18,6 +19,7 @@ var errInvalidConfig = errors.New("invalid server configuration")
 type Config struct {
 	Hub               *metrics.Hub
 	GPUHub            *gpu.Hub
+	ModelsHub         *llamaswap.Hub
 	AllowedHost       string
 	AllowedOrigin     string
 	AdditionalOrigins []string
@@ -30,6 +32,7 @@ type Config struct {
 type Server struct {
 	hub            *metrics.Hub
 	gpuHub         *gpu.Hub
+	modelsHub      *llamaswap.Hub
 	allowedHost    string
 	allowedOrigins map[string]struct{}
 	now            func() time.Time
@@ -66,6 +69,7 @@ func New(config Config) (*Server, error) {
 	return &Server{
 		hub:            config.Hub,
 		gpuHub:         config.GPUHub,
+		modelsHub:      config.ModelsHub,
 		allowedHost:    config.AllowedHost,
 		allowedOrigins: allowedOrigins,
 		now:            config.Now,
@@ -105,6 +109,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		s.gpus(w)
+	case "/api/v1/models":
+		if s.modelsHub == nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+			return
+		}
+		if !requireGet(w, request) || !validRequestInput(w, request) {
+			return
+		}
+		s.models(w)
 	default:
 		name, ok := s.assetPath(request.URL.Path)
 		if !ok {
@@ -142,6 +155,15 @@ func (s *Server) snapshot(w http.ResponseWriter) {
 
 func (s *Server) gpus(w http.ResponseWriter) {
 	body, err := s.gpuHub.Latest().MarshalAt(s.now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+func (s *Server) models(w http.ResponseWriter) {
+	body, err := s.modelsHub.Latest().MarshalAt(s.now())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
 		return

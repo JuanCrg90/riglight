@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"riglight/internal/gpu"
+	"riglight/internal/llamaswap"
 )
 
 const (
@@ -44,6 +45,20 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 	if unsubscribeGPU != nil {
 		defer unsubscribeGPU()
 	}
+	var modelUpdates <-chan llamaswap.Sample
+	var unsubscribeModels func()
+	if s.modelsHub != nil {
+		modelSubscription, subscribeErr := s.modelsHub.Subscribe()
+		if subscribeErr != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+			return
+		}
+		modelUpdates = modelSubscription.Updates()
+		unsubscribeModels = modelSubscription.Unsubscribe
+	}
+	if unsubscribeModels != nil {
+		defer unsubscribeModels()
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	streamContext, cancel := context.WithCancel(request.Context())
@@ -65,6 +80,16 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	if modelUpdates != nil {
+		select {
+		case initialModels := <-modelUpdates:
+			if s.writeEvent(w, "models", initialModels) != nil {
+				return
+			}
+		case <-streamContext.Done():
+			return
+		}
+	}
 	for {
 		select {
 		case sample := <-cpuSubscription.Updates():
@@ -73,6 +98,10 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 			}
 		case sample := <-gpuUpdates:
 			if s.writeEvent(w, "gpus", sample) != nil {
+				return
+			}
+		case sample := <-modelUpdates:
+			if s.writeEvent(w, "models", sample) != nil {
 				return
 			}
 		case <-streamContext.Done():
