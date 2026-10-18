@@ -38,6 +38,7 @@ Build frontend assets before Go tests/builds that embed them.
 | pnpm audit | No known vulnerabilities found |
 | Go module integrity | All modules verified |
 | Independent GPT reviews | Accepted findings fixed and reviewed before integration |
+| Dependency notice fidelity | BSD/MIT text compared to upstream with whitespace normalized; standalone Apache license compared byte-for-byte |
 | Privacy/secret/artifact scans | Passed: Gitleaks history/public-content/frontend scans; checked operator identifiers/paths absent from 56 public files and 4 build artifacts; no source maps |
 
 Primary executable checks:
@@ -97,7 +98,8 @@ commits and performed final runtime checks. Accepted corrections included:
 - CPU intervals with regressing counters become unavailable and recover from a
   reset baseline. Linux guest time is counted once: the eight non-guest fields
   already include guest time in user/nice, so guest must not be subtracted again.
-- Correct GiB display and verbatim third-party license packaging.
+- Correct GiB display and verbatim third-party license packaging. Final exact
+  comparison caught and corrected a one-word BSD notice transcription error.
 
 Reviewer findings were triaged against evidence: pnpm 12's multi-document
 package-manager/application lockfile was confirmed by a clean frozen install,
