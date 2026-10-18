@@ -2,7 +2,10 @@ module riglight
 
 go 1.27.2
 
-require github.com/shirou/gopsutil/v4 v4.26.9
+require (
+	github.com/NVIDIA/go-nvml v0.13.4-1
+	github.com/shirou/gopsutil/v4 v4.26.9
+)
 
 require (
 	github.com/ebitengine/purego v0.11.1 // indirect
