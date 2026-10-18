@@ -1,0 +1,5 @@
+packages:
+  - .
+
+# Fail closed: dependency lifecycle scripts require an explicit reviewed allowlist.
+onlyBuiltDependencies: []
