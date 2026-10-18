@@ -47,6 +47,20 @@ func TestParseConfigOnlyPermitsLoopbackIPAddresses(t *testing.T) {
 	if config.listen != "[::1]:9090" {
 		t.Errorf("IPv6 listen = %q", config.listen)
 	}
+
+	for input, want := range map[string]string{
+		"[0:0:0:0:0:0:0:1]:9090": "[::1]:9090",
+		"127.0.0.1:09090":        "127.0.0.1:9090",
+	} {
+		config, err := parseConfig([]string{"--listen", input})
+		if err != nil {
+			t.Errorf("parse %q: %v", input, err)
+			continue
+		}
+		if config.listen != want {
+			t.Errorf("listen %q normalized to %q, want %q", input, config.listen, want)
+		}
+	}
 }
 
 func TestRunDemoServesEmbeddedAssetsWithoutLivePublisher(t *testing.T) {

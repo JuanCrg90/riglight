@@ -161,21 +161,28 @@ func parseConfig(arguments []string) (config, error) {
 	listen := flags.String("listen", defaultListen, "")
 	demo := flags.Bool("demo", false, "")
 	dev := flags.Bool("dev", false, "")
-	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 || !validListen(*listen) {
+	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
-	return config{listen: *listen, demo: *demo, dev: *dev}, nil
+	canonicalListen, ok := canonicalLoopbackListen(*listen)
+	if !ok {
+		return config{}, errInvalidArguments
+	}
+	return config{listen: canonicalListen, demo: *demo, dev: *dev}, nil
 }
 
-func validListen(address string) bool {
+func canonicalLoopbackListen(address string) (string, bool) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return false
+		return "", false
 	}
 	ip := net.ParseIP(host)
 	if ip == nil || !ip.IsLoopback() {
-		return false
+		return "", false
 	}
 	value, err := strconv.Atoi(port)
-	return err == nil && value > 0 && value <= 65535
+	if err != nil || value <= 0 || value > 65535 {
+		return "", false
+	}
+	return net.JoinHostPort(ip.String(), strconv.Itoa(value)), true
 }
