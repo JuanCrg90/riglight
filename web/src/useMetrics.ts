@@ -15,6 +15,14 @@ type View = {
 
 const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [] };
 
+function appendPoint(history: Point[], identities: string[], identity: string, point: Point): { history: Point[]; identities: string[] } {
+  if (identities.includes(identity)) return { history, identities };
+  return {
+    history: [...history, point].slice(-HISTORY_LIMIT),
+    identities: [...identities, identity].slice(-HISTORY_LIMIT),
+  };
+}
+
 export function useMetrics(): View {
   const [view, setView] = useState(initial);
   useEffect(() => {
@@ -27,6 +35,8 @@ export function useMetrics(): View {
     let memoryFresh = false;
     let cpuHistory: Point[] = [];
     let memoryHistory: Point[] = [];
+    let cpuHistoryIdentities: string[] = [];
+    let memoryHistoryIdentities: string[] = [];
     let connection: View['connection'] = 'CONNECTING';
 
     const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory });
@@ -58,8 +68,22 @@ export function useMetrics(): View {
         memoryFresh = monotonic < memoryExpiry;
       } else { memoryFresh = false; memoryExpiry = Number.NEGATIVE_INFINITY; }
       current = sample;
-      cpuHistory = [...cpuHistory, { at: sample.sampledAt, value: sample.cpu.status === 'AVAILABLE' ? sample.cpu.utilizationPercent : null }].slice(-HISTORY_LIMIT);
-      memoryHistory = [...memoryHistory, { at: sample.sampledAt, value: sample.memory.status === 'AVAILABLE' ? sample.memory.usedBytes! / sample.memory.totalBytes! * 100 : null }].slice(-HISTORY_LIMIT);
+      const cpuIdentity = sample.cpu.status === 'AVAILABLE'
+        ? JSON.stringify([sample.cpu.status, sample.cpu.sampledAt, sample.cpu.utilizationPercent])
+        : JSON.stringify([sample.cpu.status, sample.sampledAt]);
+      const cpuPoint = appendPoint(cpuHistory, cpuHistoryIdentities, cpuIdentity, {
+        at: sample.sampledAt, value: sample.cpu.status === 'AVAILABLE' ? sample.cpu.utilizationPercent : null,
+      });
+      cpuHistory = cpuPoint.history;
+      cpuHistoryIdentities = cpuPoint.identities;
+      const memoryIdentity = sample.memory.status === 'AVAILABLE'
+        ? JSON.stringify([sample.memory.status, sample.memory.sampledAt, sample.memory.usedBytes, sample.memory.totalBytes])
+        : JSON.stringify([sample.memory.status, sample.sampledAt]);
+      const memoryPoint = appendPoint(memoryHistory, memoryHistoryIdentities, memoryIdentity, {
+        at: sample.sampledAt, value: sample.memory.status === 'AVAILABLE' ? sample.memory.usedBytes! / sample.memory.totalBytes! * 100 : null,
+      });
+      memoryHistory = memoryPoint.history;
+      memoryHistoryIdentities = memoryPoint.identities;
       connection = 'CONNECTED';
       publish();
     };
@@ -72,8 +96,16 @@ export function useMetrics(): View {
       const nextMemory = memoryFresh && now < memoryExpiry;
       if (nextCPU !== cpuFresh || nextMemory !== memoryFresh) {
         const gapAt = new Date().toISOString();
-        if (cpuFresh && !nextCPU) cpuHistory = [...cpuHistory, { at: gapAt, value: null }].slice(-HISTORY_LIMIT);
-        if (memoryFresh && !nextMemory) memoryHistory = [...memoryHistory, { at: gapAt, value: null }].slice(-HISTORY_LIMIT);
+        if (cpuFresh && !nextCPU) {
+          const point = appendPoint(cpuHistory, cpuHistoryIdentities, `stale:${now}`, { at: gapAt, value: null });
+          cpuHistory = point.history;
+          cpuHistoryIdentities = point.identities;
+        }
+        if (memoryFresh && !nextMemory) {
+          const point = appendPoint(memoryHistory, memoryHistoryIdentities, `stale:${now}`, { at: gapAt, value: null });
+          memoryHistory = point.history;
+          memoryHistoryIdentities = point.identities;
+        }
         cpuFresh = nextCPU;
         memoryFresh = nextMemory;
         publish();

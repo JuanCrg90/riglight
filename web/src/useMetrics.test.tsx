@@ -85,6 +85,58 @@ describe('useMetrics', () => {
     expect(result.current.cpuFresh).toBe(true);
   });
 
+  it('updates cached age without adding another chart sample', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    const metricTime = '2026-01-01T00:00:00Z';
+    act(() => source.send(frame(metricTime, 1_000)));
+    const cpuLength = result.current.cpuHistory.length;
+    const memoryLength = result.current.memoryHistory.length;
+    act(() => vi.advanceTimersByTime(1_000));
+    const cached = frame('2026-01-01T00:00:02Z', 5_500);
+    cached.cpu.sampledAt = metricTime;
+    cached.memory.sampledAt = metricTime;
+    act(() => source.send(cached));
+    expect(result.current.cpuHistory).toHaveLength(cpuLength);
+    expect(result.current.memoryHistory).toHaveLength(memoryLength);
+    expect(result.current.cpuFresh).toBe(true);
+    act(() => vi.advanceTimersByTime(500));
+    expect(result.current.cpuFresh).toBe(false);
+  });
+
+  it('caps each metric history at 450 distinct samples', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    const start = Date.parse('2026-01-01T00:00:00Z');
+    act(() => {
+      for (let index = 0; index < 451; index += 1) {
+        source.send(frame(new Date(start + index * 2_000).toISOString()));
+      }
+    });
+    expect(result.current.cpuHistory).toHaveLength(450);
+    expect(result.current.memoryHistory).toHaveLength(450);
+    expect(result.current.cpuHistory[0]?.at).toBe(new Date(start + 2_000).toISOString());
+  });
+
+  it('records unavailable and stale periods as gaps, never healthy zeroes', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(frame('2026-01-01T00:00:00Z')));
+    const unavailable = frame('2026-01-01T00:00:02Z');
+    unavailable.memory = { status: 'UNAVAILABLE', sampledAt: null, ageMs: null, usedBytes: null, totalBytes: null };
+    act(() => source.send(unavailable));
+    expect(result.current.sample?.memory.usedBytes).toBeNull();
+    expect(result.current.memoryHistory.at(-1)?.value).toBeNull();
+    act(() => vi.advanceTimersByTime(STALE_AFTER_MS));
+    expect(result.current.cpuHistory.at(-1)?.value).toBeNull();
+    expect(result.current.cpuHistory.some(point => point.value === 0)).toBe(false);
+  });
+
   it('does not extend freshness when the same metric sample is replayed', () => {
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);
