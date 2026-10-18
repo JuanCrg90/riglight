@@ -1,0 +1,35 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+mise.local.toml
+.mise.local.toml
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Machine-specific data; examples and fixtures must be synthetic
+/local/
+/data/
+/logs/
+/screenshots/
+*.log
+
+# Dependencies and generated output
+node_modules/
+/web/dist/
+/bin/
+/coverage/
+/web/coverage/
+/playwright-report/
+/test-results/
+*.test
+coverage.out
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
