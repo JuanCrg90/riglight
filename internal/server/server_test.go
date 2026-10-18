@@ -61,6 +61,20 @@ func TestRoutesRejectUnsupportedMethodsWithAllowHeader(t *testing.T) {
 	}
 }
 
+func TestAPIRejectsQueryParameters(t *testing.T) {
+	t.Parallel()
+
+	server := newTestServer(t)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, allowedRequest(http.MethodGet, "/api/v1/snapshot?ignored=value"))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if got := response.Body.String(); !strings.Contains(got, `"code":"INVALID_REQUEST"`) {
+		t.Errorf("response = %s, want INVALID_REQUEST", got)
+	}
+}
+
 func TestUnknownRouteReturnsGenericNotFound(t *testing.T) {
 	t.Parallel()
 

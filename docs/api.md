@@ -60,3 +60,46 @@ integers where `0 < usedBytes <= totalBytes` for an available metric.
 ```
 
 No fields outside this allowlist are serialized.
+
+## Endpoints
+
+| Method | Path | Response |
+| --- | --- | --- |
+| `GET` | `/healthz` | `{ "status": "OK" }` process health only |
+| `GET` | `/api/v1/snapshot` | The current sample schema object |
+| `GET` | `/api/v1/events` | Server-Sent Events carrying current sample objects |
+
+API and stream responses are same-origin, have `Cache-Control: no-store`, and
+require the configured exact `Host`. A missing `Origin` is permitted for
+non-browser clients; a supplied origin must exactly match the configured local
+origin. Query parameters and request bodies are rejected. Unsupported methods
+return `405` with `Allow: GET`. Errors use:
+
+```json
+{
+  "error": {
+    "code": "METHOD_NOT_ALLOWED",
+    "message": "method not allowed"
+  }
+}
+```
+
+The stable error codes are `INVALID_REQUEST`, `FORBIDDEN`, `NOT_FOUND`,
+`METHOD_NOT_ALLOWED`, `STREAM_LIMIT`, and `INTERNAL_ERROR`.
+
+## Event stream
+
+The stream sends `event: snapshot` frames with the same JSON object as
+`/api/v1/snapshot`, flushes each frame, and advises a 2000 ms reconnect delay:
+
+```text
+retry: 2000
+event: snapshot
+data: {"schemaVersion":1,...}
+
+```
+
+At most eight stream clients are accepted at once; additional clients receive a
+`503 STREAM_LIMIT` error. A new connection receives the latest sample, not a
+history replay, and a cached sample's `ageMs` continues to increase until a new
+successful collection.

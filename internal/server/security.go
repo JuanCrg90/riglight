@@ -36,6 +36,10 @@ func (s *Server) secure(w http.ResponseWriter, request *http.Request) bool {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden")
 		return false
 	}
+	if request.URL.RawQuery != "" || request.ContentLength > 0 || len(request.TransferEncoding) > 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_REQUEST", "invalid request")
+		return false
+	}
 	return true
 }
 

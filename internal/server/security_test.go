@@ -42,6 +42,21 @@ func TestSecurityRejectsHostileAndNullOrigins(t *testing.T) {
 	}
 }
 
+func TestSecurityRejectsMultipleOriginHeaders(t *testing.T) {
+	t.Parallel()
+
+	server := newTestServer(t)
+	request := allowedRequest(http.MethodGet, "/api/v1/snapshot")
+	request.Header.Add("Origin", "http://127.0.0.1:9090")
+	request.Header.Add("Origin", "http://127.0.0.1:9090")
+	response := httptest.NewRecorder()
+
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+}
+
 func TestSecurityAllowsMissingOrExactOrigin(t *testing.T) {
 	t.Parallel()
 

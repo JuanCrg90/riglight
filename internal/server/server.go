@@ -28,6 +28,7 @@ type Server struct {
 	allowedOrigin string
 	now           func() time.Time
 	context       context.Context
+	streamSlots   chan struct{}
 }
 
 func New(config Config) (*Server, error) {
@@ -46,6 +47,7 @@ func New(config Config) (*Server, error) {
 		allowedOrigin: config.AllowedOrigin,
 		now:           config.Now,
 		context:       config.Context,
+		streamSlots:   make(chan struct{}, maxSSEClients),
 	}, nil
 }
 
@@ -69,7 +71,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		if !requireGet(w, request) {
 			return
 		}
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+		s.events(w, request)
 	default:
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
 	}
