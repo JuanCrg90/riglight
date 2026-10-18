@@ -63,6 +63,22 @@ func TestParseConfigOnlyPermitsLoopbackIPAddresses(t *testing.T) {
 	}
 }
 
+func TestRunRejectsNonLinuxLiveModeBeforeFactory(t *testing.T) {
+	t.Parallel()
+
+	calledLive := false
+	err := runForOS(context.Background(), []string{"--listen", "127.0.0.1:9090"}, func(*metrics.Hub) (publisher, error) {
+		calledLive = true
+		return nil, errors.New("live factory should not be called")
+	}, "darwin")
+	if !errors.Is(err, errUnableToStart) {
+		t.Fatalf("run non-Linux live mode error = %v, want generic startup error", err)
+	}
+	if calledLive {
+		t.Fatal("non-Linux live mode constructed a live publisher")
+	}
+}
+
 func TestRunDemoServesEmbeddedAssetsWithoutLivePublisher(t *testing.T) {
 	t.Parallel()
 

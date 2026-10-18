@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -50,9 +51,16 @@ func main() {
 }
 
 func run(ctx context.Context, arguments []string, newLive livePublisherFactory) error {
+	return runForOS(ctx, arguments, newLive, runtime.GOOS)
+}
+
+func runForOS(ctx context.Context, arguments []string, newLive livePublisherFactory, goos string) error {
 	config, err := parseConfig(arguments)
 	if err != nil {
 		return errInvalidArguments
+	}
+	if !config.demo && goos != "linux" {
+		return errUnableToStart
 	}
 
 	now := time.Now()
