@@ -199,7 +199,3 @@ source carries NVIDIA's copyright, disclaimer, and U.S. Government End Users
 notice; that complete initial notice block is reproduced verbatim in
 [`LICENSES/NVIDIA-NVML-header.txt`](LICENSES/NVIDIA-NVML-header.txt). Preserve
 both notices when redistributing.
-
-The backend's Linux production package graph also links `github.com/ebitengine/purego`
-v0.11.1 through NVML's loader. Its Apache-2.0 license is reproduced verbatim in
-[`LICENSES/purego-Apache-2.0.txt`](LICENSES/purego-Apache-2.0.txt).
