@@ -1,22 +1,38 @@
+import { useMetrics } from './useMetrics';
+
 export function App() {
+  const { sample, connection, cpuFresh, memoryFresh } = useMetrics();
+  const hasSample = sample !== null;
   return (
     <main className="dashboard">
       <header className="topbar">
         <a className="wordmark" href="#main" aria-label="Riglight home">R<span>·</span></a>
         <div className="product-name">RIGLIGHT <span>/ SYSTEM</span></div>
-        <div className="connection"><span className="status-dot" /> Awaiting data</div>
+        <div className="connection"><span className="status-dot" /> {connection === 'RECONNECTING' ? 'Reconnecting' : connection === 'CONNECTED' ? 'Connected' : 'Connecting'}</div>
       </header>
       <section id="main" className="overview" aria-labelledby="page-title">
         <p className="eyebrow">HOST MONITOR <span>·</span> MILESTONE 01</p>
         <h1 id="page-title">System overview</h1>
         <p className="lede">Live CPU and memory telemetry, in one quiet place.</p>
-        <div className="empty-state" role="status">
+        {hasSample ? <>
+          <p className="mode-label">{sample.mode} MODE</p>
+          <div className="metric-row">
+            <Metric label="CPU utilization" value={sample.cpu.status === 'AVAILABLE' ? `${sample.cpu.utilizationPercent}%` : '—'} state={sample.cpu.status === 'AVAILABLE' ? cpuFresh ? 'Fresh' : 'Stale' : sample.cpu.status.replace('_', ' ')} />
+            <Metric label="Memory used" value={sample.memory.status === 'AVAILABLE' ? `${(sample.memory.usedBytes! / 1024 ** 3).toFixed(1)} / ${(sample.memory.totalBytes! / 1024 ** 3).toFixed(1)} GB` : '—'} state={sample.memory.status === 'AVAILABLE' ? memoryFresh ? 'Fresh' : 'Stale' : sample.memory.status.replace('_', ' ')} />
+          </div>
+        </> : <div className="empty-state" role="status">
           <span className="empty-mark" aria-hidden="true">···</span>
           <div><strong>Waiting for the first sample</strong><p>Metrics appear when the local Riglight service is connected.</p></div>
           <span className="sample-label">NO SAMPLE</span>
-        </div>
+        </div>}
         <p className="footer-note">Private by design <span>·</span> No history leaves this browser</p>
       </section>
     </main>
   );
+}
+
+function Metric({ label, value, state }: { label: string; value: string; state: string }) {
+  return <section className="metric" aria-label={label}>
+    <p>{label}</p><strong>{value}</strong><span>{state}</span>
+  </section>;
 }
