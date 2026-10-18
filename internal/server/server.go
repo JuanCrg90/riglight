@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"riglight/internal/gpu"
 	"riglight/internal/metrics"
 )
 
@@ -16,6 +17,7 @@ var errInvalidConfig = errors.New("invalid server configuration")
 
 type Config struct {
 	Hub               *metrics.Hub
+	GPUHub            *gpu.Hub
 	AllowedHost       string
 	AllowedOrigin     string
 	AdditionalOrigins []string
@@ -27,6 +29,7 @@ type Config struct {
 // Server serves only the milestone-one health and sample APIs.
 type Server struct {
 	hub            *metrics.Hub
+	gpuHub         *gpu.Hub
 	allowedHost    string
 	allowedOrigins map[string]struct{}
 	now            func() time.Time
@@ -62,6 +65,7 @@ func New(config Config) (*Server, error) {
 	}
 	return &Server{
 		hub:            config.Hub,
+		gpuHub:         config.GPUHub,
 		allowedHost:    config.AllowedHost,
 		allowedOrigins: allowedOrigins,
 		now:            config.Now,
@@ -92,6 +96,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		s.events(w, request)
+	case "/api/v1/gpus":
+		if s.gpuHub == nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+			return
+		}
+		if !requireGet(w, request) || !validRequestInput(w, request) {
+			return
+		}
+		s.gpus(w)
 	default:
 		name, ok := s.assetPath(request.URL.Path)
 		if !ok {
@@ -120,6 +133,15 @@ func (s *Server) health(w http.ResponseWriter) {
 
 func (s *Server) snapshot(w http.ResponseWriter) {
 	body, err := s.hub.Latest().MarshalAt(s.now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+func (s *Server) gpus(w http.ResponseWriter) {
+	body, err := s.gpuHub.Latest().MarshalAt(s.now())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
 		return

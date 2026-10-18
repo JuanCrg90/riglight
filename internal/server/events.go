@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"riglight/internal/gpu"
 )
 
 const (
@@ -22,12 +24,26 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	subscription, err := s.hub.Subscribe()
+	cpuSubscription, err := s.hub.Subscribe()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
 		return
 	}
-	defer subscription.Unsubscribe()
+	defer cpuSubscription.Unsubscribe()
+	var gpuUpdates <-chan gpu.Sample
+	var unsubscribeGPU func()
+	if s.gpuHub != nil {
+		gpuSubscription, subscribeErr := s.gpuHub.Subscribe()
+		if subscribeErr != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+			return
+		}
+		gpuUpdates = gpuSubscription.Updates()
+		unsubscribeGPU = gpuSubscription.Unsubscribe
+	}
+	if unsubscribeGPU != nil {
+		defer unsubscribeGPU()
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	streamContext, cancel := context.WithCancel(request.Context())
@@ -35,25 +51,52 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 	defer stop()
 	defer cancel()
 
-	for {
-		sample, nextErr := subscription.Next(streamContext)
-		if nextErr != nil {
+	initialCPU, nextErr := cpuSubscription.Next(streamContext)
+	if nextErr != nil || s.writeEvent(w, "snapshot", initialCPU) != nil {
+		return
+	}
+	if gpuUpdates != nil {
+		select {
+		case initialGPU := <-gpuUpdates:
+			if s.writeEvent(w, "gpus", initialGPU) != nil {
+				return
+			}
+		case <-streamContext.Done():
 			return
 		}
-		if writeErr := s.writeSnapshotEvent(w, sample); writeErr != nil {
+	}
+	for {
+		select {
+		case sample := <-cpuSubscription.Updates():
+			if s.writeEvent(w, "snapshot", sample) != nil {
+				return
+			}
+		case sample := <-gpuUpdates:
+			if s.writeEvent(w, "gpus", sample) != nil {
+				return
+			}
+		case <-streamContext.Done():
 			return
 		}
 	}
 }
 
+type gpuSample interface {
+	MarshalAt(time.Time) ([]byte, error)
+}
+
 func (s *Server) writeSnapshotEvent(w http.ResponseWriter, sample interface {
 	MarshalAt(time.Time) ([]byte, error)
 }) error {
+	return s.writeEvent(w, "snapshot", sample)
+}
+
+func (s *Server) writeEvent(w http.ResponseWriter, event string, sample gpuSample) error {
 	body, err := sample.MarshalAt(s.now())
 	if err != nil {
 		return err
 	}
-	frame := fmt.Sprintf("retry: %d\nevent: snapshot\ndata: %s\n\n", streamRetryMS, body)
+	frame := fmt.Sprintf("retry: %d\nevent: %s\ndata: %s\n\n", streamRetryMS, event, body)
 	controller := http.NewResponseController(w)
 	if err := controller.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 		return err
