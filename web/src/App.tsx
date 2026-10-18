@@ -18,7 +18,7 @@ export function App() {
         {hasSample ? <>
           <p className="mode-label">{sample.mode} MODE</p>
           <div className="metric-row">
-            <Metric label="CPU utilization" value={sample.cpu.status === 'AVAILABLE' ? `${sample.cpu.utilizationPercent}%` : '—'} state={sample.cpu.status === 'AVAILABLE' ? cpuFresh ? 'Fresh' : 'Stale' : sample.cpu.status.replace('_', ' ')}>
+            <Metric label="CPU utilization" value={sample.cpu.status === 'AVAILABLE' ? `${sample.cpu.utilizationPercent!.toFixed(1)}%` : '—'} state={sample.cpu.status === 'AVAILABLE' ? cpuFresh ? 'Fresh' : 'Stale' : sample.cpu.status.replace('_', ' ')}>
               <Sparkline label="CPU utilization history" values={cpuHistory.map(point => point.value)} />
             </Metric>
             <Metric label="Memory used" value={sample.memory.status === 'AVAILABLE' ? `${(sample.memory.usedBytes! / 1024 ** 3).toFixed(1)} / ${(sample.memory.totalBytes! / 1024 ** 3).toFixed(1)} GiB` : '—'} state={sample.memory.status === 'AVAILABLE' ? memoryFresh ? 'Fresh' : 'Stale' : sample.memory.status.replace('_', ' ')}>

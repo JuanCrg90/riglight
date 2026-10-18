@@ -12,6 +12,27 @@ describe('dashboard shell', () => {
     expect(container.querySelectorAll('path.sparkline-path')).toHaveLength(2);
   });
 
+  it.each([
+    [52.123456, '52.1%'],
+    [0, '0.0%'],
+    [100, '100.0%'],
+  ])('formats CPU utilization %s as %s', (utilizationPercent, displayValue) => {
+    let onSnapshot: ((event: Event) => void) | undefined;
+    vi.stubGlobal('EventSource', class {
+      addEventListener(_type: string, listener: EventListener) { onSnapshot = listener; }
+      removeEventListener() {}
+      close() {}
+    });
+    render(<App />);
+    const timestamp = '2026-01-01T00:00:00Z';
+    act(() => onSnapshot?.({ data: JSON.stringify({
+      schemaVersion: 1, sampledAt: timestamp, mode: 'DEMO',
+      cpu: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, utilizationPercent },
+      memory: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, usedBytes: 8_000_000_000, totalBytes: 16_000_000_000 },
+    }) } as MessageEvent));
+    expect(screen.getByRole('region', { name: 'CPU utilization' })).toHaveTextContent(displayValue);
+  });
+
   it('labels binary memory values in GiB', () => {
     let onSnapshot: ((event: Event) => void) | undefined;
     vi.stubGlobal('EventSource', class {
