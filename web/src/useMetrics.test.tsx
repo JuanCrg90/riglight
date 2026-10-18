@@ -16,10 +16,10 @@ class FakeEventSource {
   send(data: unknown) { this.listeners.get('snapshot')?.({ data: JSON.stringify(data) } as MessageEvent); }
 }
 
-const frame = (sampledAt = new Date(Date.now()).toISOString()): MetricSample => ({
+const frame = (sampledAt = new Date(Date.now()).toISOString(), ageMs = 0): MetricSample => ({
   schemaVersion: 1, sampledAt, mode: 'DEMO',
-  cpu: { status: 'AVAILABLE', sampledAt, utilizationPercent: 40 },
-  memory: { status: 'AVAILABLE', sampledAt, usedBytes: 400, totalBytes: 1000 },
+  cpu: { status: 'AVAILABLE', sampledAt, ageMs, utilizationPercent: 40 },
+  memory: { status: 'AVAILABLE', sampledAt, ageMs, usedBytes: 400, totalBytes: 1000 },
 });
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); FakeEventSource.instances = []; });
@@ -46,18 +46,44 @@ describe('useMetrics', () => {
     expect(result.current.cpuFresh).toBe(true);
     act(() => { vi.advanceTimersByTime(STALE_AFTER_MS); });
     expect(result.current.cpuFresh).toBe(false);
+    expect(result.current.cpuHistory.at(-1)?.value).toBeNull();
     act(() => source.send(first));
     expect(result.current.cpuFresh).toBe(false);
   });
 
-  it('rejects out-of-order envelopes and marks future timestamps stale under clock skew', () => {
+  it('uses server age regardless of clock skew and honors aged cached samples', () => {
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);
     const { result } = renderHook(() => useMetrics());
     const source = FakeEventSource.instances[0]!;
-    act(() => source.send(frame(new Date(Date.now() + 60_000).toISOString())));
+    act(() => source.send(frame(new Date(Date.now() + 60_000).toISOString(), 0)));
+    expect(result.current.cpuFresh).toBe(true);
+    act(() => source.send(frame(new Date(Date.now() + 61_000).toISOString(), STALE_AFTER_MS)));
     expect(result.current.cpuFresh).toBe(false);
-    act(() => source.send(frame(new Date(Date.now() - 60_000).toISOString())));
-    expect(result.current.sample?.sampledAt).not.toBe(new Date(Date.now() - 60_000).toISOString());
+  });
+
+  it('does not let a host clock behind the browser mark a fresh sample stale', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    act(() => FakeEventSource.instances[0]!.send(frame(new Date(Date.now() - 60_000).toISOString(), 0)));
+    expect(result.current.cpuFresh).toBe(true);
+  });
+
+  it('does not extend freshness when the same metric sample is replayed', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    const time = new Date(Date.now()).toISOString();
+    act(() => source.send(frame(time, 5_000)));
+    expect(result.current.cpuFresh).toBe(true);
+    act(() => vi.advanceTimersByTime(500));
+    const replay = frame(new Date(Date.now() + 1_000).toISOString(), 0);
+    replay.cpu.sampledAt = time;
+    replay.memory.sampledAt = time;
+    act(() => source.send(replay));
+    act(() => vi.advanceTimersByTime(500));
+    expect(result.current.cpuFresh).toBe(false);
   });
 });

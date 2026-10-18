@@ -21,8 +21,8 @@ export function useMetrics(): View {
     const source = new EventSource('/api/v1/events');
     let current: MetricSample | null = null;
     let lastEnvelope = '';
-    let cpuArrival = Number.NEGATIVE_INFINITY;
-    let memoryArrival = Number.NEGATIVE_INFINITY;
+    let cpuExpiry = Number.NEGATIVE_INFINITY;
+    let memoryExpiry = Number.NEGATIVE_INFINITY;
     let cpuFresh = false;
     let memoryFresh = false;
     let cpuHistory: Point[] = [];
@@ -35,20 +35,20 @@ export function useMetrics(): View {
     const onSnapshot = (event: Event) => {
       const sample = parseMetricSample((event as MessageEvent<string>).data);
       if (!sample || sample.sampledAt === lastEnvelope || (lastEnvelope && Date.parse(sample.sampledAt) <= Date.parse(lastEnvelope))) return;
-      const now = Date.now();
       const monotonic = performance.now();
-      // A metric is fresh only if its own timestamp advances; envelope updates cannot refresh it.
+      // Server-computed age avoids comparing clocks on the host and browser.
+      // A repeated metric timestamp may shorten, but never extend, its expiry.
       const oldSample = current;
-      if (sample.cpu.status === 'AVAILABLE' && (!oldSample?.cpu.sampledAt || Date.parse(sample.cpu.sampledAt!) > Date.parse(oldSample.cpu.sampledAt))) {
-        const age = now - Date.parse(sample.cpu.sampledAt!);
-        cpuFresh = age >= 0 && age < STALE_AFTER_MS;
-        cpuArrival = cpuFresh ? monotonic - age : Number.NEGATIVE_INFINITY;
-      } else if (sample.cpu.status !== 'AVAILABLE') { cpuFresh = false; cpuArrival = Number.NEGATIVE_INFINITY; }
-      if (sample.memory.status === 'AVAILABLE' && (!oldSample?.memory.sampledAt || Date.parse(sample.memory.sampledAt!) > Date.parse(oldSample.memory.sampledAt))) {
-        const age = now - Date.parse(sample.memory.sampledAt!);
-        memoryFresh = age >= 0 && age < STALE_AFTER_MS;
-        memoryArrival = memoryFresh ? monotonic - age : Number.NEGATIVE_INFINITY;
-      } else if (sample.memory.status !== 'AVAILABLE') { memoryFresh = false; memoryArrival = Number.NEGATIVE_INFINITY; }
+      if (sample.cpu.status === 'AVAILABLE') {
+        const reportedExpiry = monotonic + Math.max(0, STALE_AFTER_MS - sample.cpu.ageMs!);
+        cpuExpiry = oldSample?.cpu.sampledAt === sample.cpu.sampledAt ? Math.min(cpuExpiry, reportedExpiry) : reportedExpiry;
+        cpuFresh = monotonic < cpuExpiry;
+      } else { cpuFresh = false; cpuExpiry = Number.NEGATIVE_INFINITY; }
+      if (sample.memory.status === 'AVAILABLE') {
+        const reportedExpiry = monotonic + Math.max(0, STALE_AFTER_MS - sample.memory.ageMs!);
+        memoryExpiry = oldSample?.memory.sampledAt === sample.memory.sampledAt ? Math.min(memoryExpiry, reportedExpiry) : reportedExpiry;
+        memoryFresh = monotonic < memoryExpiry;
+      } else { memoryFresh = false; memoryExpiry = Number.NEGATIVE_INFINITY; }
       current = sample;
       lastEnvelope = sample.sampledAt;
       cpuHistory = [...cpuHistory, { at: sample.sampledAt, value: sample.cpu.status === 'AVAILABLE' ? sample.cpu.utilizationPercent : null }].slice(-HISTORY_LIMIT);
@@ -61,9 +61,12 @@ export function useMetrics(): View {
     source.onerror = onError;
     const timer = window.setInterval(() => {
       const now = performance.now();
-      const nextCPU = cpuFresh && now - cpuArrival < STALE_AFTER_MS;
-      const nextMemory = memoryFresh && now - memoryArrival < STALE_AFTER_MS;
+      const nextCPU = cpuFresh && now < cpuExpiry;
+      const nextMemory = memoryFresh && now < memoryExpiry;
       if (nextCPU !== cpuFresh || nextMemory !== memoryFresh) {
+        const gapAt = new Date().toISOString();
+        if (cpuFresh && !nextCPU) cpuHistory = [...cpuHistory, { at: gapAt, value: null }].slice(-HISTORY_LIMIT);
+        if (memoryFresh && !nextMemory) memoryHistory = [...memoryHistory, { at: gapAt, value: null }].slice(-HISTORY_LIMIT);
         cpuFresh = nextCPU;
         memoryFresh = nextMemory;
         publish();

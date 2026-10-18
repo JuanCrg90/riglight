@@ -8,11 +8,13 @@ export interface MetricSample {
   cpu: {
     status: MetricStatus;
     sampledAt: string | null;
+    ageMs: number | null;
     utilizationPercent: number | null;
   };
   memory: {
     status: MetricStatus;
     sampledAt: string | null;
+    ageMs: number | null;
     usedBytes: number | null;
     totalBytes: number | null;
   };
@@ -30,16 +32,16 @@ const statusOK = (value: unknown): value is MetricStatus =>
   value === 'AVAILABLE' || value === 'NOT_READY' || value === 'UNAVAILABLE';
 
 function validCpu(value: unknown): value is MetricSample['cpu'] {
-  if (!isRecord(value) || !hasKeys(value, ['status', 'sampledAt', 'utilizationPercent']) || !statusOK(value.status)) return false;
-  if (value.status !== 'AVAILABLE') return value.sampledAt === null && value.utilizationPercent === null;
-  return validTime(value.sampledAt) && typeof value.utilizationPercent === 'number' &&
+  if (!isRecord(value) || !hasKeys(value, ['status', 'sampledAt', 'ageMs', 'utilizationPercent']) || !statusOK(value.status)) return false;
+  if (value.status !== 'AVAILABLE') return value.sampledAt === null && value.ageMs === null && value.utilizationPercent === null;
+  return validTime(value.sampledAt) && Number.isSafeInteger(value.ageMs) && (value.ageMs as number) >= 0 && typeof value.utilizationPercent === 'number' &&
     Number.isFinite(value.utilizationPercent) && value.utilizationPercent >= 0 && value.utilizationPercent <= 100;
 }
 
 function validMemory(value: unknown): value is MetricSample['memory'] {
-  if (!isRecord(value) || !hasKeys(value, ['status', 'sampledAt', 'usedBytes', 'totalBytes']) || !statusOK(value.status)) return false;
-  if (value.status !== 'AVAILABLE') return value.sampledAt === null && value.usedBytes === null && value.totalBytes === null;
-  return validTime(value.sampledAt) && Number.isSafeInteger(value.usedBytes) && Number.isSafeInteger(value.totalBytes) &&
+  if (!isRecord(value) || !hasKeys(value, ['status', 'sampledAt', 'ageMs', 'usedBytes', 'totalBytes']) || !statusOK(value.status)) return false;
+  if (value.status !== 'AVAILABLE') return value.sampledAt === null && value.ageMs === null && value.usedBytes === null && value.totalBytes === null;
+  return validTime(value.sampledAt) && Number.isSafeInteger(value.ageMs) && (value.ageMs as number) >= 0 && Number.isSafeInteger(value.usedBytes) && Number.isSafeInteger(value.totalBytes) &&
     (value.usedBytes as number) >= 0 && (value.usedBytes as number) <= MAX_BYTES && (value.totalBytes as number) > 0 && (value.totalBytes as number) <= MAX_BYTES && (value.usedBytes as number) <= (value.totalBytes as number);
 }
 
