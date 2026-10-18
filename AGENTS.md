@@ -3,10 +3,13 @@
 ## Scope and coordination
 
 - Follow `docs/spec.md`, `tasks/plan.md`, and `tasks/todo.md`.
-- Milestone 1 CPU/RAM is implemented. The owner approved the next read-only GPU
-  increment in `docs/spec-gpu.md`, `tasks/gpu-plan.md` and `tasks/gpu-todo.md`.
-  GPU collection is opt-in with --gpu; no identity/process APIs or GPU controls.
-- Docker, llama-swap, public ingress, authentication, persistence, and service
+- CPU/RAM and optional NVIDIA GPU monitoring are implemented and reviewed.
+  GPU remains opt-in with --gpu; no identity/process APIs or GPU controls.
+- The owner approved read-only llama-swap inventory/coarse states only; follow
+  `docs/spec-models.md` and `tasks/models-plan.md`. Default disabled; no auth flow,
+  logs, inference, commands/configuration, request activity or model controls.
+  Use only the fixed GET /v1/models upstream API; never /running or general SSE.
+- Docker, public ingress, authentication, persistence, logs, and service
   installation remain separate unapproved increments.
 - Do not stop/restart the owner's running server. Verify new builds on separate
   test-owned loopback ports; do not inject synthetic stress/benchmark workloads.
