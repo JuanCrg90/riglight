@@ -6,16 +6,16 @@ type Props = { overview: GpuOverview | null; freshness: GpuFreshness };
 export function GpuSection({ overview, freshness }: Props) {
   return <section className="gpu-section" aria-labelledby="gpu-title">
     <div className="section-heading"><h2 id="gpu-title">GPU</h2><span>Current readings only</span></div>
-    {!overview ? <p className="gpu-message">GPU monitoring is disabled. Start Riglight with <code>--gpu</code> to enable read-only GPU readings.</p> : <>
-      {overview.status !== 'AVAILABLE' && <p className="gpu-message" data-state="UNAVAILABLE">{overviewMessage(overview)}</p>}
-      {overview.status === 'AVAILABLE' && overview.devices.length === 0 && <p className="gpu-message">No GPU devices are available.</p>}
+    {!overview ? <p className="gpu-message">Waiting for GPU telemetry from the local Riglight service.</p> : <>
+      {overview.status !== 'AVAILABLE' && overview.status !== 'DISABLED' && <p className="gpu-message" data-state="UNAVAILABLE">{overviewMessage(overview)}</p>}
+      {overview.status === 'DISABLED' && <p className="gpu-message">GPU monitoring is disabled. Start Riglight with <code>--gpu</code> to enable read-only GPU readings.</p>}
+      {overview.status === 'AVAILABLE' && overview.isTruncated && <p className="gpu-message" data-state="UNAVAILABLE">More than 16 GPU devices were detected; showing the first 16 only.</p>}
       {overview.devices.length > 0 && <div className="gpu-grid">{overview.devices.map(device => <GpuCard key={device.index} device={device} freshness={freshness[device.index]} />)}</div>}
     </>}
   </section>;
 }
 
 function overviewMessage(overview: GpuOverview): string {
-  if (overview.status === 'DISABLED') return 'GPU monitoring is disabled. Start Riglight with --gpu to enable read-only GPU readings.';
   if (overview.status === 'UNSUPPORTED') return overview.reasonCode === 'NO_DEVICES' ? 'No supported GPU devices were found.' : 'GPU monitoring is unsupported on this system.';
   if (overview.status === 'NOT_READY') return 'GPU readings are not ready yet.';
   return 'GPU readings are unavailable.';

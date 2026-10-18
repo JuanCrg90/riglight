@@ -29,8 +29,22 @@ describe('GPU cards', () => {
     expect(screen.queryByText('0.0%')).not.toBeInTheDocument();
   });
 
-  it('explains how to enable disabled monitoring', () => {
+  it('shows a pending state before GPU telemetry arrives', () => {
     render(<GpuSection overview={null} freshness={{}} />);
+    expect(screen.getByText(/Waiting for GPU telemetry/)).toBeVisible();
+    expect(screen.queryByText(/--gpu/)).not.toBeInTheDocument();
+  });
+
+  it('shows opt-in instructions only after an explicit disabled overview', () => {
+    const disabled = parseGpuOverview(JSON.stringify({ ...overview, mode: 'DISABLED', status: 'DISABLED', reasonCode: 'DISABLED', devices: [] }))!;
+    render(<GpuSection overview={disabled} freshness={{}} />);
     expect(screen.getByText(/--gpu/)).toBeVisible();
+  });
+
+  it('warns when the device inventory is truncated', () => {
+    const devices = Array.from({ length: 16 }, (_, index) => ({ ...overview.devices[0]!, index }));
+    const truncated = parseGpuOverview(JSON.stringify({ ...overview, reasonCode: 'DEVICE_LIMIT', isTruncated: true, devices }))!;
+    render(<GpuSection overview={truncated} freshness={fresh} />);
+    expect(screen.getByText(/showing the first 16 only/)).toBeVisible();
   });
 });
