@@ -9,7 +9,16 @@ export default defineConfig({
     strictPort: true,
     cors: { origin: 'http://127.0.0.1:5173' },
     proxy: {
-      '/api': { target: 'http://127.0.0.1:9090', changeOrigin: false },
+      '/api': {
+        target: 'http://127.0.0.1:9090',
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            const origin = request.headers.origin;
+            if (origin !== undefined) proxyRequest.setHeader('Origin', origin);
+          });
+        },
+      },
     },
   },
   test: {
