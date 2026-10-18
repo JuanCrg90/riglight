@@ -26,6 +26,10 @@ describe('parseGpuOverview', () => {
     { ...overview, reasonCode: 'RAW_DRIVER_ERROR' },
     { ...overview, sampledAt: '2026-02-31T00:00:00Z' },
     { ...overview, isTruncated: true },
+    { ...overview, status: 'DISABLED', mode: 'DEMO', reasonCode: 'DISABLED', devices: [] },
+    { ...overview, status: 'AVAILABLE', mode: 'DISABLED' },
+    { ...overview, devices: [] },
+    { ...overview, isTruncated: true, reasonCode: 'DEVICE_LIMIT' },
     { ...overview, devices: [{ ...device, index: 16 }] },
     { ...overview, devices: [device, device] },
     { ...overview, devices: [{ ...device, utilization: { ...device.utilization, percent: 101 } }] },
@@ -40,11 +44,16 @@ describe('parseGpuOverview', () => {
   });
 
   it.each([
-    [{ ...overview, status: 'DISABLED', reasonCode: 'DISABLED', devices: [], isTruncated: false }, true],
+    [{ ...overview, status: 'DISABLED', mode: 'DISABLED', reasonCode: 'DISABLED', devices: [], isTruncated: false }, true],
     [{ ...overview, status: 'UNSUPPORTED', reasonCode: 'NO_DEVICES', devices: [], isTruncated: false }, true],
     [{ ...overview, status: 'NOT_READY', reasonCode: null, devices: [], isTruncated: false }, true],
     [{ ...overview, status: 'UNAVAILABLE', reasonCode: 'QUERY_FAILED', devices: [], isTruncated: false }, true],
     [{ ...overview, status: 'UNSUPPORTED', reasonCode: 'QUERY_FAILED', devices: [], isTruncated: false }, false],
+    [{ ...overview, status: 'DISABLED', mode: 'DISABLED', reasonCode: 'DISABLED', devices: [], isTruncated: false }, true],
+    [{ ...overview, status: 'AVAILABLE', devices: Array.from({ length: 16 }, (_, index) => ({ ...device, index })) }, true],
+    [{ ...overview, status: 'AVAILABLE', isTruncated: true, reasonCode: 'DEVICE_LIMIT', devices: Array.from({ length: 16 }, (_, index) => ({ ...device, index })) }, true],
+    [{ ...overview, status: 'AVAILABLE', isTruncated: true, reasonCode: 'DEVICE_LIMIT', devices: Array.from({ length: 15 }, (_, index) => ({ ...device, index })) }, false],
+    [{ ...overview, status: 'AVAILABLE', isTruncated: true, reasonCode: 'DEVICE_LIMIT', devices: Array.from({ length: 17 }, (_, index) => ({ ...device, index })) }, false],
   ])('validates overview state contract', (value, valid) => {
     expect(parseGpuOverview(JSON.stringify(value)) !== null).toBe(valid);
   });

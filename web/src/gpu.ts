@@ -42,13 +42,17 @@ function validDevice(value: unknown): value is GpuDevice {
 }
 
 function validOverviewState(value: Record<string, unknown>): boolean {
-  const empty = Array.isArray(value.devices) && value.devices.length === 0 && value.isTruncated === false;
+  const devices = value.devices as unknown[];
+  const empty = devices.length === 0 && value.isTruncated === false;
+  const enabledMode = value.mode === 'DEMO' || value.mode === 'LIVE';
   switch (value.status) {
-    case 'AVAILABLE': return value.reasonCode === null ? value.isTruncated === false : value.reasonCode === 'DEVICE_LIMIT' && value.isTruncated === true;
-    case 'DISABLED': return value.reasonCode === 'DISABLED' && empty;
-    case 'NOT_READY': return value.reasonCode === null && empty;
-    case 'UNAVAILABLE': return value.reasonCode === 'QUERY_FAILED' && empty;
-    case 'UNSUPPORTED': return ['UNSUPPORTED_PLATFORM', 'BACKEND_UNAVAILABLE', 'DRIVER_UNAVAILABLE', 'NO_DEVICES'].includes(value.reasonCode as string) && empty;
+    case 'AVAILABLE':
+      return enabledMode && devices.length >= 1 && devices.length <= 16 &&
+        (value.isTruncated === true ? devices.length === 16 && value.reasonCode === 'DEVICE_LIMIT' : value.reasonCode === null);
+    case 'DISABLED': return value.mode === 'DISABLED' && value.reasonCode === 'DISABLED' && empty;
+    case 'NOT_READY': return enabledMode && value.reasonCode === null && empty;
+    case 'UNAVAILABLE': return enabledMode && value.reasonCode === 'QUERY_FAILED' && empty;
+    case 'UNSUPPORTED': return enabledMode && ['UNSUPPORTED_PLATFORM', 'BACKEND_UNAVAILABLE', 'DRIVER_UNAVAILABLE', 'NO_DEVICES'].includes(value.reasonCode as string) && empty;
     default: return false;
   }
 }
