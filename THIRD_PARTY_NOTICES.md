@@ -152,9 +152,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/tklauser/numcpus v0.12.0 — Apache License 2.0
 
-The upstream package's `LICENSE` is the Apache License, Version 2.0. Include
-the package's unmodified `LICENSE` file (the complete text is available at
-<https://www.apache.org/licenses/LICENSE-2.0>) in distributions.
+The upstream package's `LICENSE` is the Apache License, Version 2.0. Its
+complete text is included verbatim in [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)
+for redistribution. The license file retains the upstream copyright and
+attribution wording.
 
 ```text
                                  Apache License
