@@ -2,132 +2,60 @@ package metrics
 
 import (
 	"context"
-	"errors"
-	"sync"
+
+	"riglight/internal/telemetry"
 )
 
-var ErrHubClosed = errors.New("metrics hub is closed")
+var ErrHubClosed = telemetry.ErrHubClosed
 
-// Hub owns one immutable latest sample and fans it out without waiting for
-// subscribers. It is safe for concurrent use.
-type Hub struct {
-	mu          sync.Mutex
-	latest      Sample
-	subscribers map[*Subscription]struct{}
-	closed      bool
-}
+// Hub preserves the CPU sample API while delegating bounded fan-out to the
+// canonical telemetry hub shared with other collectors.
+type Hub struct{ inner *telemetry.Hub[Sample] }
 
 // NewHub starts a hub with an initial sample, normally NOT_READY during startup.
 func NewHub(initial Sample) (*Hub, error) {
-	if err := initial.Validate(); err != nil {
+	inner, err := telemetry.New(initial, cloneSample, func(sample Sample) error { return sample.Validate() })
+	if err != nil {
 		return nil, err
 	}
-	return &Hub{
-		latest:      cloneSample(initial),
-		subscribers: make(map[*Subscription]struct{}),
-	}, nil
+	return &Hub{inner: inner}, nil
 }
 
-// Publish replaces the latest sample and queues it for each subscriber. A full
-// queue loses its older sample, never blocking collection on a network client.
-func (h *Hub) Publish(sample Sample) error {
-	if err := sample.Validate(); err != nil {
-		return err
-	}
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
-		return ErrHubClosed
-	}
-	h.latest = cloneSample(sample)
-	for subscriber := range h.subscribers {
-		queueLatest(subscriber.samples, h.latest)
-	}
-	return nil
-}
+// Publish replaces the latest sample and queues it for each subscriber.
+func (h *Hub) Publish(sample Sample) error { return h.inner.Publish(sample) }
 
 // Latest returns a private copy of the most recent sample.
-func (h *Hub) Latest() Sample {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return cloneSample(h.latest)
-}
+func (h *Hub) Latest() Sample { return h.inner.Latest() }
 
-// Subscribe atomically registers a subscriber and enqueues the current sample.
+// Subscribe atomically registers a subscriber and queues the current sample.
 func (h *Hub) Subscribe() (*Subscription, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
-		return nil, ErrHubClosed
+	inner, err := h.inner.Subscribe()
+	if err != nil {
+		return nil, err
 	}
-
-	subscription := &Subscription{
-		hub:     h,
-		samples: make(chan Sample, 1),
-	}
-	h.subscribers[subscription] = struct{}{}
-	queueLatest(subscription.samples, h.latest)
-	return subscription, nil
+	return &Subscription{inner: inner}, nil
 }
 
 // SubscriberCount reports the active subscription count for lifecycle checks.
-func (h *Hub) SubscriberCount() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.subscribers)
-}
+func (h *Hub) SubscriberCount() int { return h.inner.SubscriberCount() }
 
-// Close removes all subscriptions. It does not close subscriber channels, so a
-// publisher can never race a channel close; callers cancel their request context.
-func (h *Hub) Close() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
-		return
-	}
-	h.closed = true
-	clear(h.subscribers)
-}
+// Close removes all subscriptions without closing their channels.
+func (h *Hub) Close() { h.inner.Close() }
 
 // Subscription is a capacity-one stream of immutable latest samples.
 type Subscription struct {
-	hub     *Hub
-	samples chan Sample
-	once    sync.Once
+	inner *telemetry.Subscription[Sample]
 }
 
 // Next waits for the newest sample or request cancellation.
-func (s *Subscription) Next(ctx context.Context) (Sample, error) {
-	select {
-	case sample := <-s.samples:
-		return cloneSample(sample), nil
-	case <-ctx.Done():
-		return Sample{}, ctx.Err()
-	}
-}
+func (s *Subscription) Next(ctx context.Context) (Sample, error) { return s.inner.Next(ctx) }
+
+// Updates exposes queued immutable samples for a select loop. It is retained
+// for transport multiplexing; callers must not mutate the received sample.
+func (s *Subscription) Updates() <-chan Sample { return s.inner.Updates() }
 
 // Unsubscribe is safe to call more than once.
-func (s *Subscription) Unsubscribe() {
-	s.once.Do(func() {
-		s.hub.mu.Lock()
-		delete(s.hub.subscribers, s)
-		s.hub.mu.Unlock()
-	})
-}
-
-func queueLatest(queue chan Sample, sample Sample) {
-	select {
-	case queue <- cloneSample(sample):
-		return
-	default:
-	}
-	select {
-	case <-queue:
-	default:
-	}
-	queue <- cloneSample(sample)
-}
+func (s *Subscription) Unsubscribe() { s.inner.Unsubscribe() }
 
 func cloneSample(sample Sample) Sample {
 	copy := sample
