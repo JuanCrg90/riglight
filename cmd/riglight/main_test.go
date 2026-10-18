@@ -86,6 +86,47 @@ func TestRunDemoServesEmbeddedAssetsWithoutLivePublisher(t *testing.T) {
 	}
 }
 
+func TestRunDevAllowsOnlyTheViteOrigin(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name      string
+		arguments []string
+		want      int
+	}{
+		{name: "production", arguments: []string{"--demo"}, want: http.StatusForbidden},
+		{name: "development", arguments: []string{"--demo", "--dev"}, want: http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			probe, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("reserve loopback port: %v", err)
+			}
+			address := probe.Addr().String()
+			if err := probe.Close(); err != nil {
+				t.Fatalf("release loopback port: %v", err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() {
+				done <- run(ctx, append(test.arguments, "--listen", address), func(*metrics.Hub) (publisher, error) {
+					return nil, errors.New("live collector should not be constructed")
+				})
+			}()
+			waitForHTTPStatus(t, address, devOrigin, test.want)
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("run demo: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("demo shutdown did not complete")
+			}
+		})
+	}
+}
+
 func TestDemoSelectionNeverConstructsLivePublisher(t *testing.T) {
 	t.Parallel()
 
@@ -119,6 +160,10 @@ func TestDemoSelectionNeverConstructsLivePublisher(t *testing.T) {
 }
 
 func waitForHTTP(t *testing.T, address string) {
+	waitForHTTPStatus(t, address, "", http.StatusOK)
+}
+
+func waitForHTTPStatus(t *testing.T, address, origin string, want int) {
 	t.Helper()
 	deadline := time.NewTimer(time.Second)
 	defer deadline.Stop()
@@ -130,10 +175,13 @@ func waitForHTTP(t *testing.T, address string) {
 			t.Fatalf("new request: %v", err)
 		}
 		request.Host = address
+		if origin != "" {
+			request.Header.Set("Origin", origin)
+		}
 		response, err := client.Do(request)
 		if err == nil {
 			response.Body.Close()
-			if response.StatusCode == http.StatusOK {
+			if response.StatusCode == want {
 				return
 			}
 		}
