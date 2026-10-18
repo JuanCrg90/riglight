@@ -3,10 +3,13 @@ package llamaswap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,7 +30,7 @@ func TestCanonicalURLAcceptsOnlyLiteralLoopbackRootWithPort(t *testing.T) {
 	}
 	for _, input := range []string{
 		"http://localhost:1234", "http://127.0.0.1", "ftp://127.0.0.1:1234",
-		"http://127.0.0.1:1234/base", "http://127.0.0.1:1234/?query=1",
+		"http://127.0.0.1:1234/base", "http://127.0.0.1:1234/?query=1", "http://127.0.0.1:1234?", "http://127.0.0.1:1234/?",
 		"http://user@127.0.0.1:1234", "http://127.0.0.1:1234/#fragment",
 		"http://[::1%25lo]:1234", "http://0.0.0.0:1234", "http://192.0.2.1:1234",
 	} {
@@ -226,6 +229,113 @@ func TestHTTPSourceDisablesProxyAndHonorsDeadlineAndCancellation(t *testing.T) {
 	sample, err := source.Collect(context.Background())
 	if err != nil || sample.Status != OverviewUnavailable || sample.ReasonCode == nil || *sample.ReasonCode != ReasonTimeout || time.Since(start) > 3*time.Second {
 		t.Fatalf("timeout sample = %#v, %v", sample, err)
+	}
+}
+
+func TestHTTPSourceClassifiesHangingResponseBodyDeadlineAndCancellation(t *testing.T) {
+	t.Parallel()
+
+	newHangingSource := func(t *testing.T) (*HTTPSource, <-chan struct{}, func()) {
+		t.Helper()
+		started := make(chan struct{})
+		fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+			close(started)
+			<-request.Context().Done()
+		}))
+		source, err := NewHTTPSource(fixture.URL)
+		if err != nil {
+			fixture.Close()
+			t.Fatal(err)
+		}
+		return source, started, fixture.Close
+	}
+
+	t.Run("deadline", func(t *testing.T) {
+		source, started, closeFixture := newHangingSource(t)
+		defer closeFixture()
+		result := make(chan struct {
+			sample Sample
+			err    error
+		}, 1)
+		go func() {
+			sample, err := source.Collect(context.Background())
+			result <- struct {
+				sample Sample
+				err    error
+			}{sample, err}
+		}()
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("response body did not begin")
+		}
+		select {
+		case got := <-result:
+			if got.err != nil || got.sample.Status != OverviewUnavailable || got.sample.ReasonCode == nil || *got.sample.ReasonCode != ReasonTimeout {
+				t.Fatalf("deadline result = %#v, %v", got.sample, got.err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("body deadline did not complete")
+		}
+	})
+
+	t.Run("canceled", func(t *testing.T) {
+		source, started, closeFixture := newHangingSource(t)
+		defer closeFixture()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		result := make(chan error, 1)
+		go func() {
+			_, err := source.Collect(ctx)
+			result <- err
+		}()
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("response body did not begin")
+		}
+		cancel()
+		select {
+		case err := <-result:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancellation error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("body cancellation did not complete")
+		}
+	})
+}
+
+func TestHTTPSourceCloseIdleConnectionsClosesOwnedConnection(t *testing.T) {
+	t.Parallel()
+
+	closed := make(chan struct{})
+	var closedOnce sync.Once
+	fixture := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[]}`)
+	}))
+	fixture.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closedOnce.Do(func() { close(closed) })
+		}
+	}
+	fixture.Start()
+	defer fixture.Close()
+	source, err := NewHTTPSource(fixture.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source.Collect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	source.CloseIdleConnections()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("idle source connection did not close")
 	}
 }
 

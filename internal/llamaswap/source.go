@@ -56,7 +56,7 @@ func NewHTTPSource(rawURL string) (*HTTPSource, error) {
 // CanonicalURL accepts only a literal loopback URL and fixes its only path.
 func CanonicalURL(rawURL string) (string, error) {
 	parsed, err := url.ParseRequestURI(rawURL)
-	if err != nil || parsed.Scheme == "" || parsed.Opaque != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" {
+	if err != nil || parsed.Scheme == "" || parsed.Opaque != "" || parsed.User != nil || parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" {
 		return "", errors.New("invalid llama-swap URL")
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
@@ -73,6 +73,9 @@ func CanonicalURL(rawURL string) (string, error) {
 	}
 	return (&url.URL{Scheme: parsed.Scheme, Host: net.JoinHostPort(ip.String(), strconv.Itoa(port)), Path: "/v1/models"}).String(), nil
 }
+
+// CloseIdleConnections releases this source's private idle HTTP connections.
+func (s *HTTPSource) CloseIdleConnections() { s.client.CloseIdleConnections() }
 
 func (s *HTTPSource) Collect(ctx context.Context) (Sample, error) {
 	requestContext, cancel := context.WithTimeout(ctx, requestTimeout)
@@ -106,7 +109,22 @@ func (s *HTTPSource) Collect(ctx context.Context) (Sample, error) {
 		return UnavailableSample(time.Now(), ModeLive, ReasonQueryFailed), nil
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBodyBytes+1))
-	if err != nil || len(body) > maxResponseBodyBytes || !utf8.Valid(body) {
+	if err != nil {
+		if ctx.Err() != nil {
+			return Sample{}, ctx.Err()
+		}
+		if errors.Is(requestContext.Err(), context.DeadlineExceeded) {
+			return UnavailableSample(time.Now(), ModeLive, ReasonTimeout), nil
+		}
+		return UnavailableSample(time.Now(), ModeLive, ReasonInvalidResponse), nil
+	}
+	if ctx.Err() != nil {
+		return Sample{}, ctx.Err()
+	}
+	if errors.Is(requestContext.Err(), context.DeadlineExceeded) {
+		return UnavailableSample(time.Now(), ModeLive, ReasonTimeout), nil
+	}
+	if len(body) > maxResponseBodyBytes || !utf8.Valid(body) {
 		return UnavailableSample(time.Now(), ModeLive, ReasonInvalidResponse), nil
 	}
 	models, ok := decodeModels(body)
