@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"riglight/internal/gpu"
+	"riglight/internal/llamaswap"
 	"riglight/internal/metrics"
 	"riglight/internal/server"
 	"riglight/web"
@@ -31,10 +32,12 @@ var (
 )
 
 type config struct {
-	listen string
-	demo   bool
-	dev    bool
-	gpu    bool
+	listen       string
+	demo         bool
+	dev          bool
+	gpu          bool
+	llamaSwap    bool
+	llamaSwapURL string
 }
 
 type publisher interface {
@@ -61,6 +64,10 @@ func runForOS(ctx context.Context, arguments []string, newLive livePublisherFact
 }
 
 func runWithFactories(ctx context.Context, arguments []string, newLive livePublisherFactory, newNative nativeGPUPollerFactory, goos string) error {
+	return runWithAllFactories(ctx, arguments, newLive, newNative, defaultLlamaSwapSource, goos)
+}
+
+func runWithAllFactories(ctx context.Context, arguments []string, newLive livePublisherFactory, newNative nativeGPUPollerFactory, newLlamaSwap llamaSwapSourceFactory, goos string) error {
 	config, err := parseConfig(arguments)
 	if err != nil {
 		return errInvalidArguments
@@ -80,6 +87,11 @@ func runWithFactories(ctx context.Context, arguments []string, newLive livePubli
 		return errUnableToStart
 	}
 	defer gpuHub.Close()
+	llamaSwapHub, err := llamaswap.NewHub(initialLlamaSwapSample(now, config))
+	if err != nil {
+		return errUnableToStart
+	}
+	defer llamaSwapHub.Close()
 	publisher, err := selectPublisher(config.demo, hub, newLive)
 	if err != nil {
 		return errUnableToStart
@@ -91,6 +103,12 @@ func runWithFactories(ctx context.Context, arguments []string, newLive livePubli
 
 	application, cancelApplication := context.WithCancel(ctx)
 	gpuWorker := selectGPUWorkerWithFactory(gpuHub, config.demo, config.gpu, newNative)
+	llamaSwapWorker, err := selectLlamaSwapWorker(llamaSwapHub, config, newLlamaSwap)
+	if err != nil {
+		cancelApplication()
+		_ = listener.Close()
+		return errUnableToStart
+	}
 	origins := []string(nil)
 	if config.dev {
 		origins = []string{devOrigin}
@@ -98,6 +116,7 @@ func runWithFactories(ctx context.Context, arguments []string, newLive livePubli
 	handler, err := server.New(server.Config{
 		Hub:               hub,
 		GPUHub:            gpuHub,
+		ModelsHub:         llamaSwapHub,
 		AllowedHost:       config.listen,
 		AllowedOrigin:     "http://" + config.listen,
 		AdditionalOrigins: origins,
@@ -115,11 +134,14 @@ func runWithFactories(ctx context.Context, arguments []string, newLive livePubli
 		IdleTimeout:       time.Minute,
 		MaxHeaderBytes:    8 << 10,
 	}
-	defer func() { shutdownApplication(cancelApplication, httpServer, gpuWorker) }()
+	defer func() { shutdownApplication(cancelApplication, httpServer, gpuWorker, llamaSwapWorker) }()
 	serveError := make(chan error, 1)
 	go func() { serveError <- httpServer.Serve(listener) }()
 	if gpuWorker != nil {
 		gpuWorker.Start(application)
+	}
+	if llamaSwapWorker != nil {
+		llamaSwapWorker.Start(application)
 	}
 
 	if err := publisher.Publish(application, time.Now()); err != nil {
@@ -145,7 +167,7 @@ func runWithFactories(ctx context.Context, arguments []string, newLive livePubli
 	}
 }
 
-func shutdownApplication(cancelApplication context.CancelFunc, server *http.Server, gpuWorker *gpuWorker) {
+func shutdownApplication(cancelApplication context.CancelFunc, server *http.Server, gpuWorker *gpuWorker, llamaSwapWorker *llamaSwapWorker) {
 	// One deadline covers HTTP stream cancellation, HTTP shutdown and normal GPU
 	// cleanup. A blocked native call is left loaded rather than racing unload.
 	cancelApplication()
@@ -154,6 +176,9 @@ func shutdownApplication(cancelApplication context.CancelFunc, server *http.Serv
 	_ = server.Shutdown(ctx)
 	if gpuWorker != nil {
 		gpuWorker.Wait(ctx)
+	}
+	if llamaSwapWorker != nil {
+		llamaSwapWorker.Wait(ctx)
 	}
 }
 
@@ -189,6 +214,8 @@ func parseConfig(arguments []string) (config, error) {
 	demo := flags.Bool("demo", false, "")
 	dev := flags.Bool("dev", false, "")
 	gpu := flags.Bool("gpu", false, "")
+	llamaSwap := flags.Bool("llama-swap", false, "")
+	llamaSwapURL := flags.String("llama-swap-url", defaultLlamaSwapURL, "")
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
@@ -196,7 +223,19 @@ func parseConfig(arguments []string) (config, error) {
 	if !ok {
 		return config{}, errInvalidArguments
 	}
-	return config{listen: canonicalListen, demo: *demo, dev: *dev, gpu: *gpu}, nil
+	urlSet := false
+	flags.Visit(func(flag *flag.Flag) {
+		urlSet = urlSet || flag.Name == "llama-swap-url"
+	})
+	if urlSet && !*llamaSwap {
+		return config{}, errInvalidArguments
+	}
+	if *llamaSwap && !*demo {
+		if _, err := llamaswap.CanonicalURL(*llamaSwapURL); err != nil {
+			return config{}, errInvalidArguments
+		}
+	}
+	return config{listen: canonicalListen, demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL}, nil
 }
 
 func canonicalLoopbackListen(address string) (string, bool) {

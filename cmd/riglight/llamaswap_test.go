@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
 	"riglight/internal/metrics"
 )
@@ -30,6 +29,13 @@ func TestParseConfigRequiresExplicitLlamaSwapOptIn(t *testing.T) {
 	enabled, err := parseConfig([]string{"--llama-swap"})
 	if err != nil || !enabled.llamaSwap || enabled.llamaSwapURL != defaultLlamaSwapURL {
 		t.Fatalf("enabled config = %#v, %v", enabled, err)
+	}
+	custom, err := parseConfig([]string{"--llama-swap", "--llama-swap-url", "http://127.0.0.1:1234"})
+	if err != nil || custom.llamaSwapURL != "http://127.0.0.1:1234" {
+		t.Fatalf("custom config = %#v, %v", custom, err)
+	}
+	if _, err := parseConfig([]string{"--llama-swap", "--llama-swap-url", "http://localhost:1234"}); !errors.Is(err, errInvalidArguments) {
+		t.Fatalf("unsafe enabled URL error = %v", err)
 	}
 	demo, err := parseConfig([]string{"--demo", "--llama-swap"})
 	if err != nil || !demo.demo || !demo.llamaSwap {
@@ -70,6 +76,54 @@ func TestLlamaSwapSelectionNeverConstructsHTTPForDisabledOrDemo(t *testing.T) {
 	}
 }
 
+func TestCLIDisabledAndDemoLlamaSwapNeverConstructHTTPSource(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{"disabled", nil},
+		{"demo", []string{"--demo", "--llama-swap"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			address := listener.Addr().String()
+			if err := listener.Close(); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			constructed := 0
+			done := make(chan error, 1)
+			go func() {
+				done <- runWithAllFactories(ctx, append(test.args, "--listen", address), func(hub *metrics.Hub) (publisher, error) {
+					return metrics.NewDemo(hub), nil
+				}, func() gpuPoller { return &countingGPUPoller{} }, func(string) (llamaswap.Source, error) {
+					constructed++
+					return nil, errors.New("HTTP source should not be constructed")
+				}, "linux")
+			}()
+			waitForHTTP(t, address)
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("run: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("CLI shutdown did not complete")
+			}
+			if constructed != 0 {
+				t.Fatalf("HTTP source constructed %d times", constructed)
+			}
+		})
+	}
+}
+
 func TestCLIBlockedLlamaSwapKeepsCPUAndGPUAndHTTPResponsive(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -81,7 +135,7 @@ func TestCLIBlockedLlamaSwapKeepsCPUAndGPUAndHTTPResponsive(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	blocked := &blockedLlamaSwapSource{started: make(chan struct{}), canceled: make(chan struct{})}
+	blocked := &blockedLlamaSwapSource{started: make(chan struct{}), canceled: make(chan struct{}), idleClosed: make(chan struct{})}
 	cpu := &countingCPUPublisher{}
 	poller := &countingGPUPoller{}
 	done := make(chan error, 1)
@@ -97,8 +151,14 @@ func TestCLIBlockedLlamaSwapKeepsCPUAndGPUAndHTTPResponsive(t *testing.T) {
 		t.Fatal("llama-swap collection did not start")
 	}
 	waitForCPUCalls(t, &cpu.calls, 1, time.Second)
-	if poller.polls.Load() == 0 {
-		t.Fatal("GPU polling did not start")
+	gpuDeadline := time.NewTimer(time.Second)
+	defer gpuDeadline.Stop()
+	for poller.polls.Load() == 0 {
+		select {
+		case <-gpuDeadline.C:
+			t.Fatal("GPU polling did not start")
+		case <-time.After(time.Millisecond):
+		}
 	}
 	request, err := http.NewRequest(http.MethodGet, "http://"+address+"/healthz", nil)
 	if err != nil {
@@ -128,12 +188,18 @@ func TestCLIBlockedLlamaSwapKeepsCPUAndGPUAndHTTPResponsive(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("blocked source was not canceled")
 	}
+	select {
+	case <-blocked.idleClosed:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not close source idle connections")
+	}
 }
 
 type blockedLlamaSwapSource struct {
-	started  chan struct{}
-	canceled chan struct{}
-	calls    atomic.Int32
+	started    chan struct{}
+	canceled   chan struct{}
+	idleClosed chan struct{}
+	calls      atomic.Int32
 }
 
 func (s *blockedLlamaSwapSource) Collect(ctx context.Context) (llamaswap.Sample, error) {
@@ -143,3 +209,5 @@ func (s *blockedLlamaSwapSource) Collect(ctx context.Context) (llamaswap.Sample,
 	close(s.canceled)
 	return llamaswap.Sample{}, ctx.Err()
 }
+
+func (s *blockedLlamaSwapSource) CloseIdleConnections() { close(s.idleClosed) }
