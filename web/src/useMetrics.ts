@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { parseMetricSample, type MetricSample } from './metrics';
+import { parseGpuOverview, type GpuOverview } from './gpu';
+import { expireGpuFreshness, gpuMetricFreshness, type GpuFreshness } from './gpuFreshness';
 
 export const STALE_AFTER_MS = 6_000;
 export const HISTORY_LIMIT = 450;
@@ -11,9 +13,11 @@ type View = {
   memoryFresh: boolean;
   cpuHistory: Point[];
   memoryHistory: Point[];
+  gpu: GpuOverview | null;
+  gpuFreshness: GpuFreshness;
 };
 
-const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [] };
+const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [], gpu: null, gpuFreshness: {} };
 
 function appendPoint(history: Point[], identities: string[], identity: string, point: Point): { history: Point[]; identities: string[] } {
   if (identities.includes(identity)) return { history, identities };
@@ -29,6 +33,9 @@ export function useMetrics(): View {
     const source = new EventSource('/api/v1/events');
     let current: MetricSample | null = null;
     const recentFrames = new Set<string>();
+    const gpuExpiries = new Map<string, { sampledAt: string; expiresAt: number }>();
+    let gpu: GpuOverview | null = null;
+    let gpuFreshness: GpuFreshness = {};
     let cpuExpiry = Number.NEGATIVE_INFINITY;
     let memoryExpiry = Number.NEGATIVE_INFINITY;
     let cpuFresh = false;
@@ -39,7 +46,7 @@ export function useMetrics(): View {
     let memoryHistoryIdentities: string[] = [];
     let connection: View['connection'] = 'CONNECTING';
 
-    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory });
+    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness });
     const onOpen = () => { connection = 'CONNECTED'; publish(); };
     const onError = () => { connection = 'RECONNECTING'; publish(); };
     const onSnapshot = (event: Event) => {
@@ -68,6 +75,11 @@ export function useMetrics(): View {
         memoryFresh = monotonic < memoryExpiry;
       } else { memoryFresh = false; memoryExpiry = Number.NEGATIVE_INFINITY; }
       current = sample;
+      if (gpu && gpu.mode !== 'DISABLED' && gpu.mode !== sample.mode) {
+        gpu = null;
+        gpuFreshness = {};
+        gpuExpiries.clear();
+      }
       const cpuIdentity = sample.cpu.status === 'AVAILABLE'
         ? JSON.stringify([sample.cpu.status, sample.cpu.sampledAt, sample.cpu.utilizationPercent])
         : JSON.stringify([sample.cpu.status, sample.sampledAt]);
@@ -87,14 +99,27 @@ export function useMetrics(): View {
       connection = 'CONNECTED';
       publish();
     };
+    const onGpus = (event: Event) => {
+      const overview = parseGpuOverview((event as MessageEvent<string>).data);
+      if (!overview || (current && overview.mode !== 'DISABLED' && overview.mode !== current.mode)) return;
+      const monotonic = performance.now();
+      gpuFreshness = gpuMetricFreshness(overview, gpu, gpuExpiries, monotonic);
+      gpu = overview;
+      connection = 'CONNECTED';
+      publish();
+    };
     source.addEventListener('snapshot', onSnapshot);
+    source.addEventListener('gpus', onGpus);
     source.onopen = onOpen;
     source.onerror = onError;
     const timer = window.setInterval(() => {
       const now = performance.now();
+      const nextGpuFreshness = expireGpuFreshness(gpuFreshness, gpuExpiries, now);
+      const gpuChanged = nextGpuFreshness !== gpuFreshness;
+      gpuFreshness = nextGpuFreshness;
       const nextCPU = cpuFresh && now < cpuExpiry;
       const nextMemory = memoryFresh && now < memoryExpiry;
-      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh) {
+      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged) {
         const gapAt = new Date().toISOString();
         if (cpuFresh && !nextCPU) {
           const point = appendPoint(cpuHistory, cpuHistoryIdentities, `stale:${now}`, { at: gapAt, value: null });
@@ -114,6 +139,7 @@ export function useMetrics(): View {
     return () => {
       window.clearInterval(timer);
       source.removeEventListener('snapshot', onSnapshot);
+      source.removeEventListener('gpus', onGpus);
       source.close();
     };
   }, []);

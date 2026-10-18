@@ -13,13 +13,23 @@ class FakeEventSource {
   constructor(readonly url: string) { FakeEventSource.instances.push(this); }
   addEventListener(type: string, listener: EventListener) { this.listeners.set(type, listener as (event: Event) => void); }
   removeEventListener(type: string) { this.listeners.delete(type); }
-  send(data: unknown) { this.listeners.get('snapshot')?.({ data: JSON.stringify(data) } as MessageEvent); }
+  send(data: unknown, type = 'snapshot') { this.listeners.get(type)?.({ data: JSON.stringify(data) } as MessageEvent); }
 }
 
 const frame = (sampledAt = new Date(Date.now()).toISOString(), ageMs = 0): MetricSample => ({
   schemaVersion: 1, sampledAt, mode: 'DEMO',
   cpu: { status: 'AVAILABLE', sampledAt, ageMs, utilizationPercent: 40 },
   memory: { status: 'AVAILABLE', sampledAt, ageMs, usedBytes: 400, totalBytes: 1000 },
+});
+
+const gpuFrame = (sampledAt: string, ageMs = 0) => ({
+  schemaVersion: 1, sampledAt, mode: 'DEMO', status: 'AVAILABLE', reasonCode: null, isTruncated: false,
+  devices: [{ index: 0,
+    utilization: { status: 'AVAILABLE', sampledAt, ageMs, percent: 40 },
+    memory: { status: 'AVAILABLE', sampledAt, ageMs, usedBytes: 400, totalBytes: 1000 },
+    temperature: { status: 'AVAILABLE', sampledAt, ageMs, celsius: 50 },
+    power: { status: 'AVAILABLE', sampledAt, ageMs, watts: 100 },
+  }],
 });
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); FakeEventSource.instances = []; });
@@ -32,6 +42,28 @@ describe('useMetrics', () => {
     expect(FakeEventSource.instances[0]?.close).toHaveBeenCalledOnce();
     unmount();
     expect(FakeEventSource.instances[1]?.close).toHaveBeenCalledOnce();
+  });
+
+  it('subscribes to named GPU events on the same source and expires sensors independently', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(gpuFrame('2026-01-01T00:00:00Z'), 'gpus'));
+    expect(result.current.gpuFreshness[0]?.utilization).toBe(true);
+    act(() => source.send(frame(), 'snapshot'));
+    expect(FakeEventSource.instances).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(STALE_AFTER_MS); });
+    expect(result.current.gpuFreshness[0]?.utilization).toBe(false);
+  });
+
+  it('rejects GPU data whose mode conflicts with the CPU snapshot', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(frame(), 'snapshot'));
+    act(() => source.send({ ...gpuFrame('2026-01-01T00:00:00Z'), mode: 'LIVE' }, 'gpus'));
+    expect(result.current.gpu).toBeNull();
   });
 
   it('rejects invalid frames and treats duplicate timestamps as non-refreshing', () => {

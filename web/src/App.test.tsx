@@ -17,15 +17,15 @@ describe('dashboard shell', () => {
     [0, '0.0%'],
     [100, '100.0%'],
   ])('formats CPU utilization %s as %s', (utilizationPercent, displayValue) => {
-    let onSnapshot: ((event: Event) => void) | undefined;
+    const listeners = new Map<string, (event: Event) => void>();
     vi.stubGlobal('EventSource', class {
-      addEventListener(_type: string, listener: EventListener) { onSnapshot = listener; }
-      removeEventListener() {}
+      addEventListener(type: string, listener: EventListener) { listeners.set(type, listener as (event: Event) => void); }
+      removeEventListener(type: string) { listeners.delete(type); }
       close() {}
     });
     render(<App />);
     const timestamp = '2026-01-01T00:00:00Z';
-    act(() => onSnapshot?.({ data: JSON.stringify({
+    act(() => listeners.get('snapshot')?.({ data: JSON.stringify({
       schemaVersion: 1, sampledAt: timestamp, mode: 'DEMO',
       cpu: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, utilizationPercent },
       memory: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, usedBytes: 8_000_000_000, totalBytes: 16_000_000_000 },
@@ -34,15 +34,15 @@ describe('dashboard shell', () => {
   });
 
   it('labels binary memory values in GiB', () => {
-    let onSnapshot: ((event: Event) => void) | undefined;
+    const listeners = new Map<string, (event: Event) => void>();
     vi.stubGlobal('EventSource', class {
-      addEventListener(_type: string, listener: EventListener) { onSnapshot = listener; }
-      removeEventListener() {}
+      addEventListener(type: string, listener: EventListener) { listeners.set(type, listener as (event: Event) => void); }
+      removeEventListener(type: string) { listeners.delete(type); }
       close() {}
     });
     render(<App />);
     const timestamp = '2026-01-01T00:00:00Z';
-    act(() => onSnapshot?.({ data: JSON.stringify({
+    act(() => listeners.get('snapshot')?.({ data: JSON.stringify({
       schemaVersion: 1, sampledAt: timestamp, mode: 'DEMO',
       cpu: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, utilizationPercent: 40 },
       memory: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, usedBytes: 8_000_000_000, totalBytes: 16_000_000_000 },
