@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"time"
 
@@ -19,6 +20,7 @@ type Config struct {
 	AllowedOrigin string
 	Now           func() time.Time
 	Context       context.Context
+	Assets        fs.FS
 }
 
 // Server serves only the milestone-one health and sample APIs.
@@ -28,6 +30,7 @@ type Server struct {
 	allowedOrigin string
 	now           func() time.Time
 	context       context.Context
+	assets        fs.FS
 	streamSlots   chan struct{}
 }
 
@@ -41,12 +44,21 @@ func New(config Config) (*Server, error) {
 	if config.Context == nil {
 		config.Context = context.Background()
 	}
+	assets := config.Assets
+	if assets != nil {
+		var err error
+		assets, err = fs.Sub(assets, "dist")
+		if err != nil {
+			return nil, errInvalidConfig
+		}
+	}
 	return &Server{
 		hub:           config.Hub,
 		allowedHost:   config.AllowedHost,
 		allowedOrigin: config.AllowedOrigin,
 		now:           config.Now,
 		context:       config.Context,
+		assets:        assets,
 		streamSlots:   make(chan struct{}, maxSSEClients),
 	}, nil
 }
@@ -73,7 +85,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 		}
 		s.events(w, request)
 	default:
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+		name, ok := s.assetPath(request.URL.Path)
+		if !ok {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+			return
+		}
+		if !requireGet(w, request) || !validRequestInput(w, request) {
+			return
+		}
+		s.asset(w, request.URL.Path, name)
 	}
 }
 
