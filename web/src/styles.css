@@ -43,6 +43,22 @@ h1 { font-size: clamp(25px, 4vw, 34px); letter-spacing: -.045em; font-weight: 50
 .sparkline { display: block; width: 100%; height: 48px; overflow: visible; }
 .sparkline-baseline { stroke: #2d3a3b; stroke-width: 1; }
 .sparkline-path { fill: none; stroke: var(--teal); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.section-heading { display: flex; align-items: baseline; gap: 12px; margin: 42px 0 12px; }
+.section-heading h2 { margin: 0; font-size: 13px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+.section-heading > span { color: var(--muted); font-size: 10px; }
+.gpu-message { margin: 0; border-left: 2px solid var(--line); padding: 12px 14px; color: #9baaa6; background: var(--surface); font-size: 11px; line-height: 1.6; }
+.gpu-message[data-state="UNAVAILABLE"] { border-color: var(--amber); }
+.gpu-message code { color: var(--teal); font: inherit; font-weight: 700; }
+.gpu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.gpu-card { min-width: 0; border: 1px solid var(--line); background: var(--surface); padding: 16px 18px; }
+.gpu-card h3 { margin: 0 0 16px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.gpu-primary, .gpu-secondary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.gpu-secondary { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.gpu-reading { min-width: 0; }
+.gpu-reading-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 10px; }
+.gpu-reading strong { display: block; overflow-wrap: anywhere; font-size: clamp(16px, 2.5vw, 21px); line-height: 1.35; font-weight: 500; font-variant-numeric: tabular-nums; }
+.gpu-reading-state { display: block; margin-top: 5px; color: var(--teal); font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+.gpu-reading-state[data-state="Stale"], .gpu-reading-state[data-state="UNAVAILABLE"], .gpu-reading-state[data-state="UNSUPPORTED"], .gpu-reading-state[data-state="NOT READY"] { color: var(--amber); }
 .footer-note { margin-top: 30px; font-size: 10px; color: var(--muted); }
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
 @media (max-width: 600px) {
@@ -50,6 +66,9 @@ h1 { font-size: clamp(25px, 4vw, 34px); letter-spacing: -.045em; font-weight: 50
   .overview { padding-top: 46px; }
   .metric-row { grid-template-columns: 1fr; gap: 10px; }
   .empty-state { padding: 17px; gap: 12px; }
+  .gpu-grid { grid-template-columns: 1fr; gap: 10px; }
+  .gpu-card { padding: 15px; }
+  .gpu-primary, .gpu-secondary { gap: 8px; }
   .sample-label { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }

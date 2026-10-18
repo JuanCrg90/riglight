@@ -1,8 +1,9 @@
 import { Sparkline } from './Sparkline';
+import { GpuSection } from './GpuSection';
 import { useMetrics } from './useMetrics';
 
 export function App() {
-  const { sample, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory } = useMetrics();
+  const { sample, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness } = useMetrics();
   const hasSample = sample !== null;
   return (
     <main className="dashboard">
@@ -30,6 +31,7 @@ export function App() {
           <div><strong>Waiting for the first sample</strong><p>Metrics appear when the local Riglight service is connected.</p></div>
           <span className="sample-label">NO SAMPLE</span>
         </div>}
+        <GpuSection overview={gpu} freshness={gpuFreshness} />
         <p className="footer-note">Private by design <span>·</span> No history leaves this browser</p>
       </section>
     </main>

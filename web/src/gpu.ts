@@ -2,8 +2,8 @@ export type GpuMode = 'DISABLED' | 'DEMO' | 'LIVE';
 export type GpuStatus = 'DISABLED' | 'NOT_READY' | 'AVAILABLE' | 'UNAVAILABLE' | 'UNSUPPORTED';
 export type GpuReason = 'DISABLED' | 'UNSUPPORTED_PLATFORM' | 'BACKEND_UNAVAILABLE' | 'DRIVER_UNAVAILABLE' | 'NO_DEVICES' | 'QUERY_FAILED' | 'DEVICE_LIMIT';
 export type GpuMetricStatus = 'AVAILABLE' | 'NOT_READY' | 'UNAVAILABLE' | 'UNSUPPORTED';
-type CommonMetric = { status: GpuMetricStatus; sampledAt: string | null; ageMs: number | null };
-export type GpuMetric<T extends string> = CommonMetric & Record<T, number | null>;
+export type GpuMetricBase = { status: GpuMetricStatus; sampledAt: string | null; ageMs: number | null };
+export type GpuMetric<T extends string> = GpuMetricBase & { [K in T]: number | null };
 export type GpuDevice = {
   index: number;
   utilization: GpuMetric<'percent'>;
@@ -20,7 +20,11 @@ const reasons: GpuReason[] = ['DISABLED', 'UNSUPPORTED_PLATFORM', 'BACKEND_UNAVA
 const statuses: GpuMetricStatus[] = ['AVAILABLE', 'NOT_READY', 'UNAVAILABLE', 'UNSUPPORTED'];
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const hasKeys = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
-const validTime = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(value) && Number.isFinite(Date.parse(value));
+const validTime = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(value)) return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 19) === value.slice(0, 19);
+};
 const safeInt = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
 
 function validMetric(value: unknown, fields: string[], validValues: (metric: Record<string, unknown>) => boolean): value is Record<string, unknown> {
@@ -40,7 +44,7 @@ function validDevice(value: unknown): value is GpuDevice {
 function validOverviewState(value: Record<string, unknown>): boolean {
   const empty = Array.isArray(value.devices) && value.devices.length === 0 && value.isTruncated === false;
   switch (value.status) {
-    case 'AVAILABLE': return value.reasonCode === null || (value.reasonCode === 'DEVICE_LIMIT' && value.isTruncated === true);
+    case 'AVAILABLE': return value.reasonCode === null ? value.isTruncated === false : value.reasonCode === 'DEVICE_LIMIT' && value.isTruncated === true;
     case 'DISABLED': return value.reasonCode === 'DISABLED' && empty;
     case 'NOT_READY': return value.reasonCode === null && empty;
     case 'UNAVAILABLE': return value.reasonCode === 'QUERY_FAILED' && empty;

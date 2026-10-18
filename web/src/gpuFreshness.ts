@@ -1,4 +1,4 @@
-import type { GpuDevice, GpuMetric, GpuMetricStatus, GpuOverview } from './gpu';
+import type { GpuDevice, GpuMetricBase, GpuMetricStatus, GpuOverview } from './gpu';
 
 export const GPU_SENSORS = ['utilization', 'memory', 'temperature', 'power'] as const;
 export type GpuSensor = typeof GPU_SENSORS[number];
@@ -13,8 +13,8 @@ export function gpuMetricFreshness(overview: GpuOverview, previous: GpuOverview 
   for (const device of overview.devices) {
     const previousDevice = oldDevices.get(device.index);
     result[device.index] = Object.fromEntries(GPU_SENSORS.map(sensor => {
-      const metric = device[sensor] as GpuMetric<string>;
-      const oldMetric = previousDevice?.[sensor] as GpuMetric<string> | undefined;
+      const metric = device[sensor] as GpuMetricBase;
+      const oldMetric = previousDevice?.[sensor] as GpuMetricBase | undefined;
       const key = `${device.index}:${sensor}`;
       if (metric.status !== 'AVAILABLE') { expiries.delete(key); return [sensor, false]; }
       const reportedExpiry = now + Math.max(0, 6_000 - metric.ageMs!);

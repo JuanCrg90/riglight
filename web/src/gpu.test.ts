@@ -24,6 +24,8 @@ describe('parseGpuOverview', () => {
     { ...overview, mode: 'LIVE', devices: [{ ...device, uuid: 'private' }] },
     { ...overview, status: 'DISABLED' },
     { ...overview, reasonCode: 'RAW_DRIVER_ERROR' },
+    { ...overview, sampledAt: '2026-02-31T00:00:00Z' },
+    { ...overview, isTruncated: true },
     { ...overview, devices: [{ ...device, index: 16 }] },
     { ...overview, devices: [device, device] },
     { ...overview, devices: [{ ...device, utilization: { ...device.utilization, percent: 101 } }] },
