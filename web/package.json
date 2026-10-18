@@ -6,7 +6,9 @@
   "packageManager": "pnpm@12.14.0",
   "scripts": {
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "react": "19.3.1",
