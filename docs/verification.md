@@ -68,6 +68,28 @@ the equivalent reproducible invocation is:
 mise exec -- go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 ```
 
+## Running-server accuracy follow-up
+
+After the owner started the server in LIVE mode, an independent read-only
+reference comparison sampled ten aligned CPU intervals and eleven RAM readings.
+CPU used raw `/proc/stat` deltas over matching intervals, summing the eight
+non-guest fields once and excluding idle/iowait from busy time. RAM used
+`MemTotal - MemAvailable`, matching the pinned Linux library semantics.
+
+The comparison passed the documented tolerance checks (CPU within five
+percentage points, RAM within one percent of total, exact RAM total). Cadence
+matched the configured two seconds. Only aggregate errors/statuses were kept
+locally; no raw counters/readings or hardware identifiers were recorded publicly.
+No artificial load or server restart was used.
+
+A real Chromium session confirmed the running embedded frontend matched its
+build, its displayed values matched received SSE data within display rounding,
+GiB/fresh/live labels were correct, and 320/768/1440 widths had no horizontal
+overflow. No page/console errors or external requests were observed. No actual
+DOM snapshots, metric values, screenshots or traces were retained. Excessive
+CPU floating-point presentation was found and fixed separately with synthetic
+fractional/zero/100 regression tests; raw API/history precision is unchanged.
+
 ## Browser and platform limitations
 
 - WebKit project: two API/security tests passed; two browser tests could not
