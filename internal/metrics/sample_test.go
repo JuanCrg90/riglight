@@ -11,31 +11,19 @@ func TestSampleJSONUsesOnlyAllowlistedFields(t *testing.T) {
 	t.Parallel()
 
 	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
-	utilization := 42.5
-	used := uint64(8_589_934_592)
-	total := uint64(17_179_869_184)
 	sample := Sample{
 		SchemaVersion: SchemaVersion,
 		SampledAt:     at,
 		Mode:          ModeDemo,
-		CPU: CPU{
-			Status:             StatusAvailable,
-			SampledAt:          &at,
-			UtilizationPercent: &utilization,
-		},
-		Memory: Memory{
-			Status:     StatusAvailable,
-			SampledAt:  &at,
-			UsedBytes:  &used,
-			TotalBytes: &total,
-		},
+		CPU:           AvailableCPU(at, at, 42.5),
+		Memory:        AvailableMemory(at, at, 8_589_934_592, 17_179_869_184),
 	}
 
-	got, err := json.Marshal(sample)
+	got, err := sample.MarshalAt(at)
 	if err != nil {
 		t.Fatalf("marshal sample: %v", err)
 	}
-	const want = `{"schemaVersion":1,"sampledAt":"2026-01-01T00:00:02Z","mode":"DEMO","cpu":{"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","utilizationPercent":42.5},"memory":{"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","usedBytes":8589934592,"totalBytes":17179869184}}`
+	const want = `{"schemaVersion":1,"sampledAt":"2026-01-01T00:00:02Z","mode":"DEMO","cpu":{"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","ageMs":0,"utilizationPercent":42.5},"memory":{"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","ageMs":0,"usedBytes":8589934592,"totalBytes":17179869184}}`
 	if string(got) != want {
 		t.Errorf("JSON = %s, want %s", got, want)
 	}
@@ -53,11 +41,33 @@ func TestSampleJSONSerializesAbsentMeasurementsAsNull(t *testing.T) {
 		Memory:        Memory{Status: StatusUnavailable},
 	}
 
-	got, err := json.Marshal(sample)
+	got, err := sample.MarshalAt(at)
 	if err != nil {
 		t.Fatalf("marshal sample: %v", err)
 	}
-	const want = `{"schemaVersion":1,"sampledAt":"2026-01-01T00:00:02Z","mode":"LIVE","cpu":{"status":"NOT_READY","sampledAt":null,"utilizationPercent":null},"memory":{"status":"UNAVAILABLE","sampledAt":null,"usedBytes":null,"totalBytes":null}}`
+	const want = `{"schemaVersion":1,"sampledAt":"2026-01-01T00:00:02Z","mode":"LIVE","cpu":{"status":"NOT_READY","sampledAt":null,"ageMs":null,"utilizationPercent":null},"memory":{"status":"UNAVAILABLE","sampledAt":null,"ageMs":null,"usedBytes":null,"totalBytes":null}}`
+	if string(got) != want {
+		t.Errorf("JSON = %s, want %s", got, want)
+	}
+}
+
+func TestSampleMarshalAtUsesCollectionAge(t *testing.T) {
+	t.Parallel()
+
+	collectedAt := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	sample := Sample{
+		SchemaVersion: SchemaVersion,
+		SampledAt:     collectedAt,
+		Mode:          ModeDemo,
+		CPU:           AvailableCPU(collectedAt, collectedAt, 42.5),
+		Memory:        AvailableMemory(collectedAt, collectedAt, 8, 16),
+	}
+
+	got, err := sample.MarshalAt(collectedAt.Add(2300 * time.Millisecond))
+	if err != nil {
+		t.Fatalf("marshal sample: %v", err)
+	}
+	const want = `{"schemaVersion":1,"sampledAt":"2026-01-01T00:00:02Z","mode":"DEMO","cpu":{"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","ageMs":2300,"utilizationPercent":42.5},"memory":{"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","ageMs":2300,"usedBytes":8,"totalBytes":16}}`
 	if string(got) != want {
 		t.Errorf("JSON = %s, want %s", got, want)
 	}
