@@ -19,7 +19,12 @@ const validTime = (value: unknown): value is string => {
 const safeInt = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value);
 
 function validId(id: unknown): id is string {
-  if (typeof id !== 'string' || id.length === 0 || id !== id.trim() || [...id].length > 128 || new TextEncoder().encode(id).length > 512) return false;
+  if (typeof id !== 'string') return false;
+  for (const char of id) {
+    const codePoint = char.codePointAt(0)!;
+    if (codePoint >= 0xd800 && codePoint <= 0xdfff) return false;
+  }
+  if (id.length === 0 || id !== id.trim() || [...id].length > 128 || new TextEncoder().encode(id).length > 512) return false;
   if ([...id].some(char => /[\\/]/u.test(char) && char === '\\' || /[\p{Cc}\p{Cf}]/u.test(char))) return false;
   if (id.startsWith('/') || id.startsWith('~') || /^[A-Za-z]:/.test(id) || /^[A-Za-z][A-Za-z\d+.-]*:/.test(id) || id.split('/').includes('..')) return false;
   return true;
