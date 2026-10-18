@@ -22,6 +22,13 @@ const frame = (sampledAt = new Date(Date.now()).toISOString(), ageMs = 0): Metri
   memory: { status: 'AVAILABLE', sampledAt, ageMs, usedBytes: 400, totalBytes: 1000 },
 });
 
+const modelFrame = (sampledAt: string, ageMs = 0, mode: 'DEMO' | 'LIVE' | 'DISABLED' = 'DEMO', id = 'example-chat') => ({
+  schemaVersion: 1, sampledAt, mode,
+  status: mode === 'DISABLED' ? 'DISABLED' : 'AVAILABLE', reasonCode: mode === 'DISABLED' ? 'DISABLED' : null,
+  ageMs: mode === 'DISABLED' ? null : ageMs, isTruncated: false,
+  models: mode === 'DISABLED' ? [] : [{ id, state: 'LOADED' }],
+});
+
 const gpuFrame = (sampledAt: string, ageMs = 0) => ({
   schemaVersion: 1, sampledAt, mode: 'DEMO', status: 'AVAILABLE', reasonCode: null, isTruncated: false,
   devices: [{ index: 0,
@@ -36,12 +43,16 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); FakeEventSource.ins
 
 describe('useMetrics', () => {
   it('uses one cleaned-up EventSource per mounted dashboard, including StrictMode cycles', () => {
+    vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);
     const { unmount } = renderHook(() => useMetrics(), { wrapper: StrictMode });
     expect(FakeEventSource.instances.length).toBe(2);
     expect(FakeEventSource.instances[0]?.close).toHaveBeenCalledOnce();
+    expect(FakeEventSource.instances[0]?.listeners.has('models')).toBe(false);
     unmount();
     expect(FakeEventSource.instances[1]?.close).toHaveBeenCalledOnce();
+    expect(FakeEventSource.instances[1]?.listeners.has('models')).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('subscribes to named GPU events on the same source and expires sensors independently', () => {
@@ -55,6 +66,62 @@ describe('useMetrics', () => {
     expect(FakeEventSource.instances).toHaveLength(1);
     act(() => { vi.advanceTimersByTime(STALE_AFTER_MS); });
     expect(result.current.gpuFreshness[0]?.utilization).toBe(false);
+  });
+
+  it('subscribes to named model events on the same source and expires inventory independently', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(modelFrame('2026-01-01T00:00:00Z'), 'models'));
+    expect(result.current.models?.models[0]?.id).toBe('example-chat');
+    expect(result.current.modelsFresh).toBe(true);
+    act(() => source.send(frame(), 'snapshot'));
+    expect(FakeEventSource.instances).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(STALE_AFTER_MS); });
+    expect(result.current.modelsFresh).toBe(false);
+    expect(result.current.models?.models[0]?.id).toBe('example-chat');
+  });
+
+  it('ignores CPU-only updates for inventory freshness and validates source mode', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(frame(), 'snapshot'));
+    act(() => source.send(modelFrame('2026-01-01T00:00:00Z'), 'models'));
+    act(() => { vi.advanceTimersByTime(5_000); });
+    act(() => source.send(frame(new Date(Date.now()).toISOString()), 'snapshot'));
+    expect(result.current.modelsFresh).toBe(true);
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(result.current.modelsFresh).toBe(false);
+    act(() => source.send(modelFrame('2026-01-01T00:00:01Z', 0, 'LIVE'), 'models'));
+    expect(result.current.models?.sampledAt).toBe('2026-01-01T00:00:00Z');
+    act(() => source.send(modelFrame('2026-01-01T00:00:02Z', 0, 'DISABLED'), 'models'));
+    expect(result.current.models?.status).toBe('DISABLED');
+    expect(result.current.modelsFresh).toBe(false);
+  });
+
+  it('clears an inventory received before a conflicting first CPU snapshot', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(modelFrame('2026-01-01T00:00:00Z', 0, 'LIVE'), 'models'));
+    expect(result.current.models?.mode).toBe('LIVE');
+    act(() => source.send(frame('2026-01-01T00:00:00Z')));
+    expect(result.current.models).toBeNull();
+  });
+
+  it('clears inventory when CPU mode changes and removes its named listener on cleanup', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result, unmount } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(frame('2026-01-01T00:00:00Z')));
+    act(() => source.send(modelFrame('2026-01-01T00:00:00Z'), 'models'));
+    act(() => source.send({ ...frame('2026-01-01T00:00:01Z'), mode: 'LIVE' }));
+    expect(result.current.models).toBeNull();
+    unmount();
+    expect(source.listeners.has('models')).toBe(false);
   });
 
   it('rejects GPU data whose mode conflicts with the CPU snapshot', () => {

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { parseMetricSample, type MetricSample } from './metrics';
 import { parseGpuOverview, type GpuOverview } from './gpu';
+import { parseModelOverview, type ModelOverview } from './models';
+import { modelInventoryFreshness, type ModelExpiry } from './modelFreshness';
 import { expireGpuFreshness, gpuMetricFreshness, type GpuExpiryMap, type GpuFreshness } from './gpuFreshness';
 
 export const STALE_AFTER_MS = 6_000;
@@ -15,9 +17,11 @@ type View = {
   memoryHistory: Point[];
   gpu: GpuOverview | null;
   gpuFreshness: GpuFreshness;
+  models: ModelOverview | null;
+  modelsFresh: boolean;
 };
 
-const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [], gpu: null, gpuFreshness: {} };
+const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [], gpu: null, gpuFreshness: {}, models: null, modelsFresh: false };
 
 function appendPoint(history: Point[], identities: string[], identity: string, point: Point): { history: Point[]; identities: string[] } {
   if (identities.includes(identity)) return { history, identities };
@@ -34,8 +38,12 @@ export function useMetrics(): View {
     let current: MetricSample | null = null;
     const recentFrames = new Set<string>();
     const gpuExpiries: GpuExpiryMap = new Map();
+    const modelExpiries: ModelExpiry = new Map();
     let gpu: GpuOverview | null = null;
     let gpuFreshness: GpuFreshness = {};
+    let models: ModelOverview | null = null;
+    let modelsFresh = false;
+    let modelsExpiry = Number.NEGATIVE_INFINITY;
     let cpuExpiry = Number.NEGATIVE_INFINITY;
     let memoryExpiry = Number.NEGATIVE_INFINITY;
     let cpuFresh = false;
@@ -46,7 +54,7 @@ export function useMetrics(): View {
     let memoryHistoryIdentities: string[] = [];
     let connection: View['connection'] = 'CONNECTING';
 
-    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness });
+    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness, models, modelsFresh });
     const onOpen = () => { connection = 'CONNECTED'; publish(); };
     const onError = () => { connection = 'RECONNECTING'; publish(); };
     const onSnapshot = (event: Event) => {
@@ -75,6 +83,12 @@ export function useMetrics(): View {
         memoryFresh = monotonic < memoryExpiry;
       } else { memoryFresh = false; memoryExpiry = Number.NEGATIVE_INFINITY; }
       current = sample;
+      if ((oldSample && oldSample.mode !== sample.mode) || (models && models.mode !== 'DISABLED' && models.mode !== sample.mode)) {
+        models = null;
+        modelsFresh = false;
+        modelsExpiry = Number.NEGATIVE_INFINITY;
+        modelExpiries.clear();
+      }
       if (gpu && gpu.mode !== 'DISABLED' && gpu.mode !== sample.mode) {
         gpu = null;
         gpuFreshness = {};
@@ -108,8 +122,20 @@ export function useMetrics(): View {
       connection = 'CONNECTED';
       publish();
     };
+    const onModels = (event: Event) => {
+      const overview = parseModelOverview((event as MessageEvent<string>).data);
+      if (!overview || (current && overview.mode !== 'DISABLED' && overview.mode !== current.mode)) return;
+      const monotonic = performance.now();
+      const freshness = modelInventoryFreshness(overview, models, modelExpiries, monotonic);
+      models = overview;
+      modelsFresh = freshness.fresh;
+      modelsExpiry = freshness.expiry;
+      connection = 'CONNECTED';
+      publish();
+    };
     source.addEventListener('snapshot', onSnapshot);
     source.addEventListener('gpus', onGpus);
+    source.addEventListener('models', onModels);
     source.onopen = onOpen;
     source.onerror = onError;
     const timer = window.setInterval(() => {
@@ -119,7 +145,9 @@ export function useMetrics(): View {
       gpuFreshness = nextGpuFreshness;
       const nextCPU = cpuFresh && now < cpuExpiry;
       const nextMemory = memoryFresh && now < memoryExpiry;
-      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged) {
+      const nextModels = modelsFresh && now < modelsExpiry;
+      const modelsChanged = nextModels !== modelsFresh;
+      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged || modelsChanged) {
         const gapAt = new Date().toISOString();
         if (cpuFresh && !nextCPU) {
           const point = appendPoint(cpuHistory, cpuHistoryIdentities, `stale:${now}`, { at: gapAt, value: null });
@@ -133,6 +161,7 @@ export function useMetrics(): View {
         }
         cpuFresh = nextCPU;
         memoryFresh = nextMemory;
+        modelsFresh = nextModels;
         publish();
       }
     }, 100);
@@ -140,6 +169,7 @@ export function useMetrics(): View {
       window.clearInterval(timer);
       source.removeEventListener('snapshot', onSnapshot);
       source.removeEventListener('gpus', onGpus);
+      source.removeEventListener('models', onModels);
       source.close();
     };
   }, []);
