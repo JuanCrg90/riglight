@@ -18,6 +18,7 @@ mise.local.toml
 
 # Dependencies and generated output
 node_modules/
+.vite/
 /web/dist/
 /bin/
 /coverage/
