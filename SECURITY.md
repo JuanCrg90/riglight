@@ -5,8 +5,11 @@
 Riglight is a loopback-bound, read-only dashboard for CPU and RAM on one Linux
 host, with optional NVIDIA GPU monitoring enabled only by `--gpu`. GPU output
 is limited to numeric device indices and allowlisted metrics; it does not query
-or expose device identifiers, process information, or controls. Riglight does
-not provide authentication, public ingress, Docker or llama-swap integrations,
+or expose device identifiers, process information, or controls. Optional
+llama-swap inventory is enabled separately by `--llama-swap` and exposes only
+validated aliases and reported coarse states. No inference, model controls,
+logs, commands, prompts/responses, request activity or configuration is read.
+Riglight does not provide authentication, public ingress, Docker integration,
 persistence, or service installation. Do not assume a private network by itself
 is an authorization boundary.
 
@@ -32,6 +35,20 @@ disabled. Live CPU/RAM collection remains independent of the GPU option. For
 frontend development, run the backend with `--demo --dev` and run Vite in a
 separate terminal on its configured loopback port; `--dev` only permits that
 origin and does not start the frontend server.
+
+llama-swap collection is disabled by default. The operator selects a literal
+loopback URL; browsers cannot choose it. Only the fixed GET `/v1/models` path
+is used, with bounded response headers/body, a two-second request deadline,
+no redirects/environment proxies, and normal TLS verification. `/running` and
+the general upstream event stream are deliberately excluded because they expose
+command metadata and request activity. Unknown response fields are discarded;
+raw responses, errors, URLs and diagnostics are never forwarded. Authentication
+requirements are reported without an automatic credential or service change.
+
+`--demo --llama-swap` is wholly synthetic and does not construct the HTTP source.
+Actual model aliases are private runtime data: never put them or upstream
+payloads in public fixtures, screenshots, logs or reports. Treat alias strings
+as untrusted text, not HTML/links/commands; no persistence or export is provided.
 
 No telemetry or external frontend assets are intended. Security checks and
 package installation may contact public registries or advisory services as

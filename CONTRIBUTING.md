@@ -5,8 +5,10 @@ CPU/RAM monitoring and explicitly opt-in, read-only NVIDIA GPU monitoring on
 one Linux host. Consult [docs/spec.md](docs/spec.md), [docs/spec-gpu.md](docs/spec-gpu.md),
 [tasks/plan.md](tasks/plan.md), [tasks/todo.md](tasks/todo.md),
 [tasks/gpu-plan.md](tasks/gpu-plan.md), and [tasks/gpu-todo.md](tasks/gpu-todo.md)
-before making changes. Docker, llama-swap, deployment, and data-retention work
-remain separate and require approval.
+before making changes. Read-only llama-swap inventory is a separately approved
+increment; follow [its specification](docs/spec-models.md) and
+[task plan](tasks/models-plan.md). Docker, logs, model controls/inference,
+deployment, authentication, and data-retention work still require approval.
 
 ## Privacy and safety
 
@@ -25,6 +27,11 @@ remain separate and require approval.
 - Use synthetic fixtures only; never use real GPU hardware readings in unit or
   browser test fixtures. Live hardware checks are separate, explicit read-only
   verification and must not expose identifiers or readings in public artifacts.
+- llama-swap tests must use synthetic local HTTP fixtures, never an operator's
+  service, model aliases, metadata or logs. The integration may only issue
+  GET `/v1/models`; `/running`, general upstream SSE, inference and control
+  endpoints are deliberately excluded. Test URL/proxy/redirect/TLS/response
+  bounds, cancellation, projected fields and independent inventory freshness.
 - Preserve upstream legal attribution and notices.
 - The existing Git author identity is intentionally selected by the repository
   owner; contributions do not anonymize or replace that attribution.

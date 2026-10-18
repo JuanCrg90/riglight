@@ -162,3 +162,54 @@ process; if it fails, the generic unsupported/unavailable outcome is retained
 and a process restart is required to retry. Successful initialization polls
 sensors every two seconds. Riglight does not install or modify drivers or make
 other system changes.
+
+## Model inventory
+
+`GET /api/v1/models` and the named `models` event on the same existing SSE
+connection return only a bounded allowlist. CPU/RAM/GPU payloads are unchanged.
+Collection is opt-in with `--llama-swap`; default and demo never construct the
+live HTTP source. All values below are synthetic.
+
+```json
+{
+  "schemaVersion": 1,
+  "sampledAt": "2026-01-01T00:00:02Z",
+  "mode": "DEMO",
+  "status": "AVAILABLE",
+  "reasonCode": null,
+  "ageMs": 0,
+  "isTruncated": false,
+  "models": [
+    {"id":"example-chat","state":"LOADED"},
+    {"id":"example-embed","state":"UNLOADED"}
+  ]
+}
+```
+
+Modes are DISABLED (only for disabled collection), DEMO or LIVE. Status is
+DISABLED, NOT_READY, AVAILABLE, UNAVAILABLE or UNSUPPORTED. AVAILABLE and
+NOT_READY have null reasonCode; DISABLED requires DISABLED; UNSUPPORTED requires
+API_UNSUPPORTED. UNAVAILABLE reasons are CONNECT_FAILED, TIMEOUT, AUTH_REQUIRED,
+QUERY_FAILED or INVALID_RESPONSE. Non-available overviews contain models=[],
+ageMs=null and isTruncated=false; sampledAt still timestamps the status update.
+
+AVAILABLE has a nonnegative safe integer ageMs computed at serialization from
+retained monotonic completion time. At most 128 distinct safe aliases are
+returned in stable order; isTruncated signals overflow and exactly 128 returned.
+Empty inventory is valid. IDs are bounded valid Unicode without control/format
+characters, absolute/tilde/drive paths, backslashes, parent-directory segments
+or URI schemes. Slash-separated org/model aliases are allowed and rendered as
+plain escaped text. Models have only id/state; state is LOADED, UNLOADED or UNKNOWN.
+
+States are reported by llama-swap's narrow `GET /v1/models` API. Loaded includes
+non-stopped processes and **does not prove readiness**. Missing/unrecognized
+upstream state is UNKNOWN; finer starting/stopping/ready states are not inferred.
+Other upstream fields, private URLs/diagnostics/commands/configuration, logs,
+request content and activity are not exposed or retained in the DTO.
+
+The browser keeps one EventSource for all three sources. Inventory freshness
+expires after six seconds independently of CPU/GPU events; cached timestamp
+replays cannot renew it. No model history, controls or export are provided.
+The source uses a configured literal-loopback HTTP/HTTPS base URL, normal TLS
+verification, no proxy/redirects, a two-second deadline and one-MiB body limit.
+URL configuration is CLI-only and is never accepted from a browser.

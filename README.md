@@ -2,22 +2,26 @@
 
 **Your AI workstation, at a glance.**
 
-Riglight is a private, read-only dashboard for Linux workstation CPU and RAM
-monitoring. The milestone-1 app provides live updates in a browser and an
-explicit synthetic demo mode. It binds to loopback by default; it is not a
-remote shell or control plane.
+Riglight is a private, read-only dashboard for Linux workstation CPU/RAM,
+optional NVIDIA GPU metrics, and optional llama-swap inventory. It provides
+live browser updates and an explicit synthetic demo mode. It binds to loopback
+by default; it is not a remote shell or control plane.
 
 ## Status and scope
 
 Milestone 1 covers CPU utilization and RAM used/total. Optional, read-only
 NVIDIA GPU monitoring is also implemented and must be explicitly enabled with
-`--gpu`; Docker, llama-swap, public ingress, authentication, persistence, and
-service installation remain out of scope. See the [CPU/RAM specification](docs/spec.md),
+`--gpu`. Read-only llama-swap inventory is enabled separately with
+`--llama-swap`; its [specification](docs/spec-models.md) and
+[implementation plan](tasks/models-plan.md) define the narrow scope. Docker,
+logs, public ingress, authentication, persistence, and service installation remain
+out of scope. See the [CPU/RAM specification](docs/spec.md),
 [GPU specification](docs/spec-gpu.md), [GPU implementation plan](tasks/gpu-plan.md),
 and [GPU task list](tasks/gpu-todo.md) for scope and project state.
 [CPU/RAM verification](docs/verification.md) and
-[GPU verification](docs/verification-gpu.md) record passing combined checks and
-Chromium coverage; WebKit/Safari verification remains incomplete.
+[GPU verification](docs/verification-gpu.md) record the earlier milestones.
+[Model inventory verification](docs/verification-models.md) records current
+combined checks; WebKit/Safari verification remains incomplete.
 
 ## Run
 
@@ -133,3 +137,35 @@ For synthetic GPU readings without initializing NVML:
 
 See [GPU API details](docs/api.md#gpu-snapshot), [security policy](SECURITY.md),
 and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Optional llama-swap inventory
+
+Opt in to the conventional local endpoint:
+
+```sh
+./bin/riglight --llama-swap
+```
+
+To configure another literal-loopback address, use `--llama-swap-url` together
+with `--llama-swap`. HTTP/HTTPS, an explicit port and a root base path are
+required; DNS names, credentials, queries, fragments and redirects are rejected.
+Environment proxies are not used, and TLS verification is never disabled.
+The upstream URL is not sent to the browser. No authentication flow is included;
+a protected upstream reports Authentication required without sending credentials.
+
+Riglight reads only `GET /v1/models`, projecting aliases and reported coarse
+states. **Loaded does not imply ready**; unsupported/missing state is Unknown,
+not Unloaded. Inventory is capped at 128 aliases and independently becomes
+stale after six seconds. Requests have a two-second timeout and a one-MiB body
+limit. No model loading/unloading, inference, logs, commands, request activity
+or configuration is accessed. Defaults remain disabled with no upstream calls.
+
+For synthetic inventory and GPU metrics without contacting llama-swap or NVML:
+
+```sh
+./bin/riglight --demo --gpu --llama-swap
+```
+
+See [model API details](docs/api.md#model-inventory) and the
+[model specification](docs/spec-models.md). All public examples are synthetic;
+never share real aliases, inventory or upstream responses in bug reports.
