@@ -8,10 +8,10 @@ Access it from a desktop browser over a trusted private connection.
 
 ## Status
 
-Design stage. There is no runnable application yet. Review the
-[draft specification](docs/spec.md) for scope, acceptance criteria, architecture,
-and the proposed development commands. Implementation follows specification
-review, then plan and task review.
+Planning stage. There is no runnable application yet. The
+[approved milestone-1 specification](docs/spec.md) defines scope, privacy rules,
+and acceptance criteria. Review the proposed [implementation plan](tasks/plan.md)
+and [task list](tasks/todo.md) before application implementation.
 
 ## Privacy first
 

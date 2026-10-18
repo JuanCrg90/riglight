@@ -1,6 +1,6 @@
 # Spec: Riglight
 
-Status: Draft — awaiting human review before implementation planning.
+Status: Approved for milestone 1; implementation plan/task review pending.
 
 ## Objective
 
@@ -178,8 +178,8 @@ mise install
 mise exec -- go test -race ./...
 mise exec -- go vet ./...
 mise exec -- gofmt -l cmd internal
-mise exec -- go build -o bin/riglight ./cmd/riglight
-mise exec -- go run golang.org/x/vuln/cmd/govulncheck@<pinned-version> ./...
+mise exec -- go build -trimpath -o bin/riglight ./cmd/riglight
+mise exec -- go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 pnpm --dir web install --frozen-lockfile --ignore-scripts
 pnpm --dir web test -- --run
 pnpm --dir web lint
@@ -191,9 +191,8 @@ mise exec -- go run ./cmd/riglight --demo
 mise exec -- go run ./cmd/riglight
 ```
 
-Replace the vulnerability-tool version placeholder with an exact reviewed version
-in the implementation plan. Frontend build must precede any Go build that embeds
-its assets. A clean format check requires empty `gofmt -l` output, not merely a
+Proposed exact toolchain/dependency pins and secret-scanning commands are recorded
+in `tasks/plan.md`. Frontend build must precede any Go build that embeds its assets. A clean format check requires empty `gofmt -l` output, not merely a
 zero exit code. Browser tests must start local synthetic/demo services and must
 not record actual workstation data. Missing tools/checks must be reported, not
 silently skipped. Define and pin the secret-scanning command during planning.
@@ -276,10 +275,11 @@ Never:
 
 ## Review gate and open questions
 
-Review this draft before implementation planning. The next deliverables are
-`tasks/plan.md` and `tasks/todo.md`; those receive review before implementation.
+Milestone 1 was approved when the owner authorized continuing and requested an
+initial Git checkpoint. That checkpoint preserves the original draft. Review
+`tasks/plan.md` and `tasks/todo.md` before application implementation.
 
-- Confirm milestone 1 and the privacy/security boundaries above.
+- Review the proposed implementation sequence and dependency pins.
 - Confirm GPU vendor and llama-swap version when starting those integrations;
   these are not prerequisites for the CPU/RAM milestone.
 - Private HTTPS proxy/access policy and log-viewer limits are decisions for their
