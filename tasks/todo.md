@@ -1,5 +1,7 @@
 # Tasks: Riglight milestone 1
 
+Next authorized increment: [GPU tasks](gpu-todo.md).
+
 Status: Milestone-1 implementation integrated through GPT-only Herdr workers and
 isolated feature worktrees. Full browser verification is partially blocked by
 missing WebKit native libraries; see `../docs/verification.md` for evidence.

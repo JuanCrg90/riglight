@@ -1,5 +1,8 @@
 # Implementation plan: Riglight milestone 1
 
+Next authorized increment: [GPU plan](gpu-plan.md),
+[GPU tasks](gpu-todo.md), and [GPU spec](../docs/spec-gpu.md).
+
 Status: Milestone 1 implemented, independently reviewed, and integrated with
 GPT-only Herdr workers and isolated feature worktrees. The full browser gate
 remains partially blocked; see `../docs/verification.md`.
