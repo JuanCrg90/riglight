@@ -57,6 +57,23 @@ describe('dashboard shell', () => {
     expect(screen.getByText('Private workstation telemetry, with optional read-only integrations.')).toBeVisible();
   });
 
+  it('renders model inventory from the existing named event', () => {
+    const listeners = new Map<string, (event: Event) => void>();
+    vi.stubGlobal('EventSource', class {
+      addEventListener(type: string, listener: EventListener) { listeners.set(type, listener as (event: Event) => void); }
+      removeEventListener(type: string) { listeners.delete(type); }
+      close() {}
+    });
+    render(<App />);
+    act(() => listeners.get('models')?.({ data: JSON.stringify({
+      schemaVersion: 1, sampledAt: '2026-01-01T00:00:00Z', mode: 'DEMO', status: 'AVAILABLE',
+      reasonCode: null, ageMs: 0, isTruncated: false, models: [{ id: 'example-chat', state: 'UNKNOWN' }],
+    }) } as MessageEvent));
+    expect(screen.getByRole('region', { name: 'llama-swap' })).toBeVisible();
+    expect(screen.getByText('example-chat')).toBeVisible();
+    expect(screen.getByText('Unknown')).toBeVisible();
+  });
+
   it('describes the pending state without inventing telemetry', () => {
     vi.stubGlobal('EventSource', class { addEventListener() {} removeEventListener() {} close() {} });
     render(<App />);
