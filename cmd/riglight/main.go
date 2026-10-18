@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"riglight/internal/gpu"
 	"riglight/internal/metrics"
 	"riglight/internal/server"
 	"riglight/web"
@@ -33,6 +34,7 @@ type config struct {
 	listen string
 	demo   bool
 	dev    bool
+	gpu    bool
 }
 
 type publisher interface {
@@ -69,6 +71,11 @@ func runForOS(ctx context.Context, arguments []string, newLive livePublisherFact
 		return errUnableToStart
 	}
 	defer hub.Close()
+	gpuHub, err := gpu.NewHub(initialGPUSample(now, config.demo, config.gpu))
+	if err != nil {
+		return errUnableToStart
+	}
+	defer gpuHub.Close()
 	publisher, err := selectPublisher(config.demo, hub, newLive)
 	if err != nil {
 		return errUnableToStart
@@ -79,13 +86,14 @@ func runForOS(ctx context.Context, arguments []string, newLive livePublisherFact
 	}
 
 	application, cancelApplication := context.WithCancel(ctx)
-	defer cancelApplication()
+	gpuWorker := selectGPUWorker(gpuHub, config.demo, config.gpu)
 	origins := []string(nil)
 	if config.dev {
 		origins = []string{devOrigin}
 	}
 	handler, err := server.New(server.Config{
 		Hub:               hub,
+		GPUHub:            gpuHub,
 		AllowedHost:       config.listen,
 		AllowedOrigin:     "http://" + config.listen,
 		AdditionalOrigins: origins,
@@ -93,6 +101,7 @@ func runForOS(ctx context.Context, arguments []string, newLive livePublisherFact
 		Assets:            web.Assets,
 	})
 	if err != nil {
+		cancelApplication()
 		_ = listener.Close()
 		return errUnableToStart
 	}
@@ -102,12 +111,12 @@ func runForOS(ctx context.Context, arguments []string, newLive livePublisherFact
 		IdleTimeout:       time.Minute,
 		MaxHeaderBytes:    8 << 10,
 	}
-	defer func() {
-		cancelApplication()
-		shutdownServer(httpServer)
-	}()
+	defer func() { shutdownApplication(cancelApplication, httpServer, gpuWorker) }()
 	serveError := make(chan error, 1)
 	go func() { serveError <- httpServer.Serve(listener) }()
+	if gpuWorker != nil {
+		gpuWorker.Start(application)
+	}
 
 	if err := publisher.Publish(application, time.Now()); err != nil {
 		return errUnableToStart
@@ -132,10 +141,16 @@ func runForOS(ctx context.Context, arguments []string, newLive livePublisherFact
 	}
 }
 
-func shutdownServer(server *http.Server) {
+func shutdownApplication(cancelApplication context.CancelFunc, server *http.Server, gpuWorker *gpuWorker) {
+	// One deadline covers HTTP stream cancellation, HTTP shutdown and normal GPU
+	// cleanup. A blocked native call is left loaded rather than racing unload.
+	cancelApplication()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = server.Shutdown(ctx)
+	if gpuWorker != nil {
+		gpuWorker.Wait(ctx)
+	}
 }
 
 func selectPublisher(demo bool, hub *metrics.Hub, newLive livePublisherFactory) (publisher, error) {
@@ -169,6 +184,7 @@ func parseConfig(arguments []string) (config, error) {
 	listen := flags.String("listen", defaultListen, "")
 	demo := flags.Bool("demo", false, "")
 	dev := flags.Bool("dev", false, "")
+	gpu := flags.Bool("gpu", false, "")
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
@@ -176,7 +192,7 @@ func parseConfig(arguments []string) (config, error) {
 	if !ok {
 		return config{}, errInvalidArguments
 	}
-	return config{listen: canonicalListen, demo: *demo, dev: *dev}, nil
+	return config{listen: canonicalListen, demo: *demo, dev: *dev, gpu: *gpu}, nil
 }
 
 func canonicalLoopbackListen(address string) (string, bool) {

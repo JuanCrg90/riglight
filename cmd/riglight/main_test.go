@@ -21,8 +21,12 @@ func TestParseConfigDefaultsToLoopbackDemoPort(t *testing.T) {
 	if config.listen != "127.0.0.1:9090" {
 		t.Errorf("listen = %q, want 127.0.0.1:9090", config.listen)
 	}
-	if config.demo || config.dev {
+	if config.demo || config.dev || config.gpu {
 		t.Errorf("unexpected defaults: %#v", config)
+	}
+	gpuConfig, err := parseConfig([]string{"--gpu"})
+	if err != nil || !gpuConfig.gpu {
+		t.Fatalf("--gpu config = %#v, %v", gpuConfig, err)
 	}
 }
 
