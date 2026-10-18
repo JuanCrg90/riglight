@@ -15,6 +15,7 @@ test('receives labeled demo metrics over SSE without browser errors or external 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'System overview' })).toBeVisible();
   await expect(page.getByText('DEMO MODE')).toBeVisible();
+  await expect(page.getByText(/GPU monitoring is disabled/)).toBeVisible();
   await expect(page.getByText('Connected', { exact: true })).toBeVisible();
   await expect(page.getByRole('img', { name: 'CPU utilization history' })).toBeVisible();
   await expect(page.getByRole('img', { name: 'Memory utilization history' })).toBeVisible();
