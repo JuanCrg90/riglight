@@ -121,6 +121,30 @@ func TestLiveCollectorInvalidatesCounterRegressionAndRecoversWithNewBaseline(t *
 	}
 }
 
+func TestAggregateUtilizationRejectsEveryRegressingCounter(t *testing.T) {
+	t.Parallel()
+
+	previous := cpuCounters{user: 10, nice: 10, system: 10, idle: 10, iowait: 10, irq: 10, softirq: 10, steal: 10, guest: 10, guestNice: 10}
+	for name, regress := range map[string]func(*cpuCounters){
+		"user":       func(value *cpuCounters) { value.user = 9 },
+		"nice":       func(value *cpuCounters) { value.nice = 9 },
+		"system":     func(value *cpuCounters) { value.system = 9 },
+		"idle":       func(value *cpuCounters) { value.idle = 9 },
+		"iowait":     func(value *cpuCounters) { value.iowait = 9 },
+		"irq":        func(value *cpuCounters) { value.irq = 9 },
+		"softirq":    func(value *cpuCounters) { value.softirq = 9 },
+		"steal":      func(value *cpuCounters) { value.steal = 9 },
+		"guest":      func(value *cpuCounters) { value.guest = 9 },
+		"guest nice": func(value *cpuCounters) { value.guestNice = 9 },
+	} {
+		current := previous
+		regress(&current)
+		if _, ok := aggregateUtilization(previous, current); ok {
+			t.Errorf("%s regression produced a valid utilization", name)
+		}
+	}
+}
+
 func TestLiveCollectorRejectsInvalidCountersAndUnsafeMemory(t *testing.T) {
 	t.Parallel()
 
