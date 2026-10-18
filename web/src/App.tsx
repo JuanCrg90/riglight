@@ -1,7 +1,8 @@
+import { Sparkline } from './Sparkline';
 import { useMetrics } from './useMetrics';
 
 export function App() {
-  const { sample, connection, cpuFresh, memoryFresh } = useMetrics();
+  const { sample, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory } = useMetrics();
   const hasSample = sample !== null;
   return (
     <main className="dashboard">
@@ -17,8 +18,12 @@ export function App() {
         {hasSample ? <>
           <p className="mode-label">{sample.mode} MODE</p>
           <div className="metric-row">
-            <Metric label="CPU utilization" value={sample.cpu.status === 'AVAILABLE' ? `${sample.cpu.utilizationPercent}%` : '—'} state={sample.cpu.status === 'AVAILABLE' ? cpuFresh ? 'Fresh' : 'Stale' : sample.cpu.status.replace('_', ' ')} />
-            <Metric label="Memory used" value={sample.memory.status === 'AVAILABLE' ? `${(sample.memory.usedBytes! / 1024 ** 3).toFixed(1)} / ${(sample.memory.totalBytes! / 1024 ** 3).toFixed(1)} GB` : '—'} state={sample.memory.status === 'AVAILABLE' ? memoryFresh ? 'Fresh' : 'Stale' : sample.memory.status.replace('_', ' ')} />
+            <Metric label="CPU utilization" value={sample.cpu.status === 'AVAILABLE' ? `${sample.cpu.utilizationPercent}%` : '—'} state={sample.cpu.status === 'AVAILABLE' ? cpuFresh ? 'Fresh' : 'Stale' : sample.cpu.status.replace('_', ' ')}>
+              <Sparkline label="CPU utilization history" values={cpuHistory.map(point => point.value)} />
+            </Metric>
+            <Metric label="Memory used" value={sample.memory.status === 'AVAILABLE' ? `${(sample.memory.usedBytes! / 1024 ** 3).toFixed(1)} / ${(sample.memory.totalBytes! / 1024 ** 3).toFixed(1)} GB` : '—'} state={sample.memory.status === 'AVAILABLE' ? memoryFresh ? 'Fresh' : 'Stale' : sample.memory.status.replace('_', ' ')}>
+              <Sparkline label="Memory utilization history" values={memoryHistory.map(point => point.value)} />
+            </Metric>
           </div>
         </> : <div className="empty-state" role="status">
           <span className="empty-mark" aria-hidden="true">···</span>
@@ -31,8 +36,8 @@ export function App() {
   );
 }
 
-function Metric({ label, value, state }: { label: string; value: string; state: string }) {
+function Metric({ label, value, state, children }: { label: string; value: string; state: string; children: React.ReactNode }) {
   return <section className="metric" aria-label={label}>
-    <p>{label}</p><strong>{value}</strong><span>{state}</span>
+    <p>{label}</p><strong>{value}</strong><span data-state={state}>{state}</span>{children}
   </section>;
 }
