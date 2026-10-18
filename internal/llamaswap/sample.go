@@ -97,9 +97,10 @@ func NewAvailableSample(at, completedAt time.Time, mode Mode, models []Model) (S
 	if at.IsZero() || completedAt.IsZero() || mode == ModeDisabled || !validMode(mode) {
 		return Sample{}, errors.New("invalid available sample")
 	}
-	copy := append([]Model(nil), models...)
-	ids := make(map[string]struct{}, len(copy))
-	for _, model := range copy {
+	modelsCopy := make([]Model, len(models))
+	copy(modelsCopy, models)
+	ids := make(map[string]struct{}, len(modelsCopy))
+	for _, model := range modelsCopy {
 		if !validID(model.ID) || !validState(model.State) {
 			return Sample{}, errors.New("invalid model")
 		}
@@ -108,17 +109,17 @@ func NewAvailableSample(at, completedAt time.Time, mode Mode, models []Model) (S
 		}
 		ids[model.ID] = struct{}{}
 	}
-	sort.Slice(copy, func(i, j int) bool { return copy[i].ID < copy[j].ID })
-	truncated := len(copy) > MaxModels
+	sort.Slice(modelsCopy, func(i, j int) bool { return modelsCopy[i].ID < modelsCopy[j].ID })
+	truncated := len(modelsCopy) > MaxModels
 	if truncated {
-		copy = copy[:MaxModels]
+		modelsCopy = modelsCopy[:MaxModels]
 	}
 	sample := Sample{
 		SchemaVersion: SchemaVersion,
 		SampledAt:     at.UTC(),
 		Mode:          mode,
 		Status:        OverviewAvailable,
-		Models:        copy,
+		Models:        modelsCopy,
 		IsTruncated:   truncated,
 		completedAt:   completedAt,
 	}
