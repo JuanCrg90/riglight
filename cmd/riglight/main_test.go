@@ -141,6 +141,28 @@ func TestRunDevAllowsOnlyTheViteOrigin(t *testing.T) {
 	}
 }
 
+func TestLiveSelectionConstructsOnlyTheLivePublisher(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	hub, err := metrics.NewHub(initialSample(at, false))
+	if err != nil {
+		t.Fatalf("new hub: %v", err)
+	}
+	defer hub.Close()
+	calledLive := false
+	publisher, err := selectPublisher(false, hub, func(hub *metrics.Hub) (publisher, error) {
+		calledLive = true
+		return metrics.NewDemo(hub), nil
+	})
+	if err != nil {
+		t.Fatalf("select live publisher: %v", err)
+	}
+	if !calledLive || publisher == nil {
+		t.Fatal("live selection did not construct its publisher")
+	}
+}
+
 func TestDemoSelectionNeverConstructsLivePublisher(t *testing.T) {
 	t.Parallel()
 
@@ -168,7 +190,7 @@ func TestDemoSelectionNeverConstructsLivePublisher(t *testing.T) {
 	if calledLive {
 		t.Fatal("demo selection constructed live publisher")
 	}
-	if err := publisher.Publish(at); err != nil {
+	if err := publisher.Publish(context.Background(), at); err != nil {
 		t.Fatalf("publish demo sample: %v", err)
 	}
 }

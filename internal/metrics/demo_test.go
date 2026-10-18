@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -16,7 +17,7 @@ func TestDemoPublishesDeterministicSyntheticSample(t *testing.T) {
 	defer hub.Close()
 	demo := NewDemo(hub)
 
-	if err := demo.Publish(at); err != nil {
+	if err := demo.Publish(context.Background(), at); err != nil {
 		t.Fatalf("publish demo sample: %v", err)
 	}
 	got := hub.Latest()
@@ -42,7 +43,7 @@ func TestDemoDoesNotNeedSubscriberToPublish(t *testing.T) {
 	defer hub.Close()
 
 	demo := NewDemo(hub)
-	if err := demo.Publish(at); err != nil {
+	if err := demo.Publish(context.Background(), at); err != nil {
 		t.Fatalf("publish demo sample: %v", err)
 	}
 	if hub.SubscriberCount() != 0 {

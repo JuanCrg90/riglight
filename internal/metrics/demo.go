@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -17,7 +18,10 @@ func NewDemo(hub *Hub) *Demo {
 }
 
 // Publish emits the next synthetic sample at the supplied collection time.
-func (d *Demo) Publish(at time.Time) error {
+func (d *Demo) Publish(ctx context.Context, at time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	d.mu.Lock()
 	d.step++
 	step := d.step

@@ -35,7 +35,7 @@ type config struct {
 }
 
 type publisher interface {
-	Publish(time.Time) error
+	Publish(context.Context, time.Time) error
 }
 
 type livePublisherFactory func(*metrics.Hub) (publisher, error)
@@ -101,7 +101,7 @@ func run(ctx context.Context, arguments []string, newLive livePublisherFactory) 
 	serveError := make(chan error, 1)
 	go func() { serveError <- httpServer.Serve(listener) }()
 
-	if err := publisher.Publish(time.Now()); err != nil {
+	if err := publisher.Publish(application, time.Now()); err != nil {
 		return errUnableToStart
 	}
 	ticker := time.NewTicker(2 * time.Second)
@@ -117,7 +117,7 @@ func run(ctx context.Context, arguments []string, newLive livePublisherFactory) 
 			}
 			return errUnableToStart
 		case tick := <-ticker.C:
-			if err := publisher.Publish(tick); err != nil {
+			if err := publisher.Publish(application, tick); err != nil {
 				return errUnableToStart
 			}
 		}
@@ -137,8 +137,8 @@ func selectPublisher(demo bool, hub *metrics.Hub, newLive livePublisherFactory) 
 	return newLive(hub)
 }
 
-func newLivePublisher(*metrics.Hub) (publisher, error) {
-	return nil, errUnableToStart
+func newLivePublisher(hub *metrics.Hub) (publisher, error) {
+	return metrics.NewLive(hub), nil
 }
 
 func initialSample(at time.Time, demo bool) metrics.Sample {

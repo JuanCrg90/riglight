@@ -180,7 +180,7 @@ func (m Memory) validate() error {
 	if m.SampledAt == nil || m.SampledAt.IsZero() || m.collectedAt.IsZero() || m.UsedBytes == nil || m.TotalBytes == nil {
 		return errors.New("missing available measurement")
 	}
-	if *m.TotalBytes == 0 || *m.UsedBytes > *m.TotalBytes {
+	if *m.TotalBytes == 0 || *m.TotalBytes > maxSafeJSONInteger || *m.UsedBytes > *m.TotalBytes {
 		return errors.New("invalid memory measurements")
 	}
 	return nil
