@@ -3,8 +3,14 @@
 ## Scope and coordination
 
 - Follow `docs/spec.md`, `tasks/plan.md`, and `tasks/todo.md`.
-- Milestone 1 is CPU/RAM monitoring only. GPU, Docker, llama-swap, public ingress,
-  authentication, persistence, and service installation are separate increments.
+- Milestone 1 CPU/RAM is implemented. The owner approved the next read-only GPU
+  increment in `docs/spec-gpu.md`, `tasks/gpu-plan.md` and `tasks/gpu-todo.md`.
+  GPU collection is opt-in with --gpu; no identity/process APIs or GPU controls.
+- Docker, llama-swap, public ingress, authentication, persistence, and service
+  installation remain separate unapproved increments.
+- Do not stop/restart the owner's running server. Verify new builds on separate
+  test-owned loopback ports; do not inject synthetic stress/benchmark workloads.
+  Routine project builds/tests and approved dependency downloads remain allowed.
 - Use GPT models through `openai-codex` only for project development and review.
   Do not use local, OpenCode, Gemini, or other non-GPT workers for this project.
 - The primary session coordinates. Assigned workers implement only their bounded
