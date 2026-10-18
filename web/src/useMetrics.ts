@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { parseMetricSample, type MetricSample } from './metrics';
 import { parseGpuOverview, type GpuOverview } from './gpu';
-import { expireGpuFreshness, gpuMetricFreshness, type GpuFreshness } from './gpuFreshness';
+import { expireGpuFreshness, gpuMetricFreshness, type GpuExpiryMap, type GpuFreshness } from './gpuFreshness';
 
 export const STALE_AFTER_MS = 6_000;
 export const HISTORY_LIMIT = 450;
@@ -33,7 +33,7 @@ export function useMetrics(): View {
     const source = new EventSource('/api/v1/events');
     let current: MetricSample | null = null;
     const recentFrames = new Set<string>();
-    const gpuExpiries = new Map<string, { sampledAt: string; expiresAt: number }>();
+    const gpuExpiries: GpuExpiryMap = new Map();
     let gpu: GpuOverview | null = null;
     let gpuFreshness: GpuFreshness = {};
     let cpuExpiry = Number.NEGATIVE_INFINITY;
