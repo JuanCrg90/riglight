@@ -32,6 +32,9 @@ func (w *gpuWorker) Start(ctx context.Context) {
 		go func() {
 			defer close(w.done)
 			defer w.poller.Close()
+			if ctx.Err() != nil {
+				return
+			}
 			w.publish(time.Now())
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
@@ -40,6 +43,9 @@ func (w *gpuWorker) Start(ctx context.Context) {
 				case <-ctx.Done():
 					return
 				case at := <-ticker.C:
+					if ctx.Err() != nil {
+						return
+					}
 					w.publish(at)
 				}
 			}
@@ -70,12 +76,20 @@ func initialGPUSample(at time.Time, demo, enabled bool) gpu.Sample {
 	return gpu.NotReadySample(at, gpu.ModeLive)
 }
 
+type nativeGPUPollerFactory func() gpuPoller
+
+func defaultNativeGPUPoller() gpuPoller { return gpu.NewNativeProvider() }
+
 func selectGPUWorker(hub *gpu.Hub, demo, enabled bool) *gpuWorker {
+	return selectGPUWorkerWithFactory(hub, demo, enabled, defaultNativeGPUPoller)
+}
+
+func selectGPUWorkerWithFactory(hub *gpu.Hub, demo, enabled bool, newNative nativeGPUPollerFactory) *gpuWorker {
 	if !enabled {
 		return nil
 	}
 	if demo {
 		return newGPUWorker(hub, &demoGPUPoller{})
 	}
-	return newGPUWorker(hub, gpu.NewNativeProvider())
+	return newGPUWorker(hub, newNative())
 }

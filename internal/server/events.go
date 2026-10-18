@@ -81,7 +81,7 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 	}
 }
 
-type gpuSample interface {
+type eventSample interface {
 	MarshalAt(time.Time) ([]byte, error)
 }
 
@@ -91,7 +91,7 @@ func (s *Server) writeSnapshotEvent(w http.ResponseWriter, sample interface {
 	return s.writeEvent(w, "snapshot", sample)
 }
 
-func (s *Server) writeEvent(w http.ResponseWriter, event string, sample gpuSample) error {
+func (s *Server) writeEvent(w http.ResponseWriter, event string, sample eventSample) error {
 	body, err := sample.MarshalAt(s.now())
 	if err != nil {
 		return err

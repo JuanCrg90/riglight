@@ -53,10 +53,14 @@ func main() {
 }
 
 func run(ctx context.Context, arguments []string, newLive livePublisherFactory) error {
-	return runForOS(ctx, arguments, newLive, runtime.GOOS)
+	return runWithFactories(ctx, arguments, newLive, defaultNativeGPUPoller, runtime.GOOS)
 }
 
 func runForOS(ctx context.Context, arguments []string, newLive livePublisherFactory, goos string) error {
+	return runWithFactories(ctx, arguments, newLive, defaultNativeGPUPoller, goos)
+}
+
+func runWithFactories(ctx context.Context, arguments []string, newLive livePublisherFactory, newNative nativeGPUPollerFactory, goos string) error {
 	config, err := parseConfig(arguments)
 	if err != nil {
 		return errInvalidArguments
@@ -86,7 +90,7 @@ func runForOS(ctx context.Context, arguments []string, newLive livePublisherFact
 	}
 
 	application, cancelApplication := context.WithCancel(ctx)
-	gpuWorker := selectGPUWorker(gpuHub, config.demo, config.gpu)
+	gpuWorker := selectGPUWorkerWithFactory(gpuHub, config.demo, config.gpu, newNative)
 	origins := []string(nil)
 	if config.dev {
 		origins = []string{devOrigin}
