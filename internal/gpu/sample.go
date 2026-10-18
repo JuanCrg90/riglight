@@ -141,13 +141,15 @@ func (s Sample) Validate() error {
 	if err := s.validateOverview(); err != nil {
 		return err
 	}
-	for index, device := range s.Devices {
-		if device.Index != index || device.Index < 0 || device.Index >= MaxDevices {
+	previousIndex := -1
+	for _, device := range s.Devices {
+		if device.Index <= previousIndex || device.Index < 0 || device.Index >= MaxDevices {
 			return errors.New("invalid GPU device index")
 		}
 		if err := device.validate(); err != nil {
 			return fmt.Errorf("device %d: %w", device.Index, err)
 		}
+		previousIndex = device.Index
 	}
 	return nil
 }
@@ -164,7 +166,9 @@ func (s Sample) validateOverview() error {
 			return errors.New("invalid not-ready overview")
 		}
 	case OverviewAvailable:
-		if s.Mode == ModeDisabled || (s.IsTruncated && !sameReason(s.ReasonCode, ReasonDeviceLimit)) || (!s.IsTruncated && s.ReasonCode != nil) {
+		if s.Mode == ModeDisabled || len(s.Devices) == 0 ||
+			(s.IsTruncated && (!sameReason(s.ReasonCode, ReasonDeviceLimit) || len(s.Devices) != MaxDevices)) ||
+			(!s.IsTruncated && s.ReasonCode != nil) {
 			return errors.New("invalid available overview")
 		}
 	case OverviewUnavailable:
@@ -204,10 +208,17 @@ func (m Utilization) validate() error {
 	return nil
 }
 func (m Memory) validate() error {
-	if !validMetricStatus(m.Status) || !validMetricValues(m.Status, m.SampledAt, m.collectedAt, m.UsedBytes != nil && m.TotalBytes != nil) {
+	if !validMetricStatus(m.Status) || (m.UsedBytes == nil) != (m.TotalBytes == nil) {
 		return errors.New("invalid memory")
 	}
-	if m.TotalBytes != nil && (*m.TotalBytes == 0 || *m.TotalBytes > maxSafeJSONInteger || *m.UsedBytes > *m.TotalBytes) {
+	hasValues := m.UsedBytes != nil
+	if !validMetricValues(m.Status, m.SampledAt, m.collectedAt, hasValues) {
+		return errors.New("invalid memory")
+	}
+	if !hasValues {
+		return nil
+	}
+	if *m.TotalBytes == 0 || *m.TotalBytes > maxSafeJSONInteger || *m.UsedBytes > *m.TotalBytes {
 		return errors.New("invalid memory values")
 	}
 	return nil
