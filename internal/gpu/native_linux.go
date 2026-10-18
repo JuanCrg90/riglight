@@ -94,6 +94,10 @@ func mapResult(value nvml.Return) result {
 		return resultArgumentVersionMismatch
 	case nvml.ERROR_LIBRARY_NOT_FOUND:
 		return resultLibraryNotFound
+	case nvml.ERROR_DRIVER_NOT_LOADED:
+		return resultDriverNotLoaded
+	case nvml.ERROR_NO_PERMISSION:
+		return resultPermission
 	default:
 		return resultUnknown
 	}
