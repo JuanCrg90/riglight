@@ -111,6 +111,13 @@ func TestSampleRejectsInvalidValues(t *testing.T) {
 			},
 			Memory: Memory{Status: StatusNotReady},
 		},
+		{
+			SchemaVersion: SchemaVersion,
+			SampledAt:     at,
+			Mode:          ModeDemo,
+			CPU:           CPU{Status: StatusNotReady},
+			Memory:        AvailableMemory(at, at, maxSafeJSONInteger+1, maxSafeJSONInteger+1),
+		},
 	} {
 		if _, err := json.Marshal(sample); err == nil {
 			t.Errorf("json.Marshal(%+v) succeeded for invalid sample", sample)
