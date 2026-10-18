@@ -13,9 +13,9 @@ export function App() {
         <div className="connection"><span className="status-dot" /> {connection === 'RECONNECTING' ? 'Reconnecting' : connection === 'CONNECTED' ? 'Connected' : 'Connecting'}</div>
       </header>
       <section id="main" className="overview" aria-labelledby="page-title">
-        <p className="eyebrow">HOST MONITOR <span>·</span> MILESTONE 01</p>
+        <p className="eyebrow">READ-ONLY HOST MONITOR</p>
         <h1 id="page-title">System overview</h1>
-        <p className="lede">Live CPU and memory telemetry, in one quiet place.</p>
+        <p className="lede">CPU, memory and optional GPU telemetry.</p>
         {hasSample ? <>
           <p className="mode-label">{sample.mode} MODE</p>
           <div className="metric-row">
