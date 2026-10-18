@@ -2,38 +2,73 @@
 
 **Your AI workstation, at a glance.**
 
-A planned private, read-only web dashboard for Linux AI workstations: system
-health, GPU pressure, llama-swap activity, and Docker containers in one view.
-Access it from a desktop browser over a trusted private connection.
+Riglight is a private, read-only dashboard for Linux workstation CPU and RAM
+monitoring. The milestone-1 app provides live updates in a browser and an
+explicit synthetic demo mode. It binds to loopback by default; it is not a
+remote shell or control plane.
 
-## Status
+## Status and scope
 
-Planning stage. There is no runnable application yet. The
-[approved milestone-1 specification](docs/spec.md) defines scope, privacy rules,
-and acceptance criteria. Review the proposed [implementation plan](tasks/plan.md)
-and [task list](tasks/todo.md) before application implementation.
+Milestone 1 covers CPU utilization and RAM used/total. GPU, Docker, llama-swap,
+public ingress, authentication, persistence, and service installation are not
+included. See the [specification](docs/spec.md), [implementation plan](tasks/plan.md),
+and [task list](tasks/todo.md) for acceptance criteria and current project state.
 
-## Privacy first
+## Run
 
-- No analytics, telemetry, hosted fonts, or third-party frontend assets.
-- No prompts, model responses, environment variables, or command-line arguments
-  collected by default.
-- Live application logs are an explicit opt-in and may contain sensitive data.
-- Local settings and runtime data do not belong in source control.
-- Public examples, fixtures, screenshots, and bug reports must use synthetic data.
-- A private network is not a substitute for least privilege or access controls.
+Install the pinned tools with mise, then build the frontend before building the
+Go server (which embeds the built assets):
 
-The public repository must not contain real machine identifiers, addresses,
-credentials, logs, or personal filesystem paths. Git ignore rules are only one
-layer: review files and history before publishing. Secret scanning cannot prove
-that arbitrary content contains no personal information.
+```sh
+mise install
+pnpm --dir web install --frozen-lockfile --ignore-scripts
+pnpm --dir web build
+mise exec -- go build -trimpath -o bin/riglight ./cmd/riglight
+```
 
-## Intended stack
+Run synthetic data without reading host metrics:
 
-Go, React, TypeScript, Vite, and Server-Sent Events. No database for the initial
-live-first dashboard. Toolchain versions and dependencies will be pinned during
-scaffolding after maintenance and security checks.
+```sh
+mise exec -- go run ./cmd/riglight --demo
+```
 
-## License
+By default, the server listens only on `127.0.0.1:9090`. Live mode reads CPU
+and RAM metrics only. The optional development mode allows the local Vite
+origin `http://127.0.0.1:5173`:
 
-[MIT](LICENSE).
+```sh
+mise exec -- go run ./cmd/riglight --dev
+```
+
+For remote viewing, keep Riglight loopback-bound and use an SSH tunnel from the
+client:
+
+```sh
+ssh -N -L 9090:127.0.0.1:9090 user@host.example
+```
+
+Then open `http://127.0.0.1:9090` locally. Do not expose the listener publicly;
+VPN reachability alone is not authorization. The application does not configure
+network access or install a service.
+
+## Development checks
+
+Available frontend scripts include `test` (one-shot Vitest), `lint`,
+`typecheck`, and `build`. Frontend dependency install scripts are blocked by
+default. Follow the [plan](tasks/plan.md) for command ordering and verification;
+never claim a check passed unless it was run successfully. Browser `test:e2e`
+is planned, not currently listed as a package script.
+
+## Privacy
+
+No telemetry, persistence, prompts, process arguments, or external frontend
+assets are part of milestone 1. Public fixtures, screenshots, and logs must be
+synthetic. Review files and history for private information before publication;
+secret scanners cannot prove arbitrary content is safe. Git commits use the
+repository owner's intentionally selected existing identity.
+
+## License and notices
+
+Riglight is licensed under the [MIT License](LICENSE). See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for dependency attribution and
+license notices.
