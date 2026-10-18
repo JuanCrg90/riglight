@@ -21,6 +21,7 @@ export default defineConfig({
     { name: 'chromium', testIgnore: '**/gpu.spec.ts', use: { ...devices['Desktop Chrome'] } },
     { name: 'webkit', testIgnore: '**/gpu.spec.ts', use: { ...devices['Desktop Safari'] } },
     { name: 'chromium-gpu', testMatch: '**/gpu.spec.ts', use: { ...devices['Desktop Chrome'], baseURL: gpuBaseURL } },
+    { name: 'webkit-gpu', testMatch: '**/gpu.spec.ts', use: { ...devices['Desktop Safari'], baseURL: gpuBaseURL } },
   ],
   webServer: [
     {
