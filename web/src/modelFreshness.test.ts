@@ -6,6 +6,9 @@ const snapshot = (sampledAt: string, ageMs = 0, mode: 'DEMO' | 'LIVE' = 'DEMO', 
   schemaVersion: 1, sampledAt, mode, status: 'AVAILABLE', reasonCode: null, ageMs, isTruncated: false,
   models: [{ id, state: 'LOADED' }],
 });
+const unavailable = (sampledAt: string): ModelOverview => ({
+  ...snapshot(sampledAt), status: 'NOT_READY', reasonCode: null, ageMs: null, models: [],
+});
 
 describe('model inventory freshness', () => {
   it('expires at six seconds and never renews a timestamp identity', () => {
@@ -32,6 +35,32 @@ describe('model inventory freshness', () => {
     modelInventoryFreshness(b, unavailable, expiries, 2_000);
     expect(modelInventoryFreshness(a, b, expiries, 5_500).fresh).toBe(true);
     expect(modelInventoryFreshness(a, b, expiries, 6_001).fresh).toBe(false);
+  });
+
+  it('records non-available timestamps so a later available replay cannot become fresh', () => {
+    const expiries: ModelExpiry = new Map(); const pending = unavailable('2026-01-01T00:00:00Z');
+    expect(modelInventoryFreshness(pending, null, expiries, 100).fresh).toBe(false);
+    expect(expiries.size).toBe(1);
+    expect(modelInventoryFreshness(snapshot(pending.sampledAt), pending, expiries, 200).fresh).toBe(false);
+  });
+
+  it('preserves A expiry across an unavailable B between A updates', () => {
+    const expiries: ModelExpiry = new Map(); const a = snapshot('2026-01-01T00:00:00Z');
+    modelInventoryFreshness(a, null, expiries, 0);
+    const unavailableB = unavailable('2026-01-01T00:00:01Z');
+    expect(modelInventoryFreshness(unavailableB, a, expiries, 3_000).fresh).toBe(false);
+    expect(modelInventoryFreshness(a, unavailableB, expiries, 5_000).fresh).toBe(true);
+    expect(modelInventoryFreshness(a, unavailableB, expiries, 6_001).fresh).toBe(false);
+    expect(expiries.size).toBe(2);
+  });
+
+  it('bounds non-available timestamp identities to the most recent 32', () => {
+    const expiries: ModelExpiry = new Map();
+    for (let index = 0; index < 33; index += 1) {
+      const time = new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
+      modelInventoryFreshness(unavailable(time), null, expiries, index * 10);
+    }
+    expect(expiries.size).toBe(32);
   });
 
   it('accepts unseen earlier timestamps after clock rollback and clears on mode change', () => {
