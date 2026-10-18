@@ -1,6 +1,7 @@
 # Implementation plan: Riglight milestone 1
 
-Status: Proposed — review with `tasks/todo.md` before implementation.
+Status: Approved — implementation authorized with GPT-only Herdr workers and
+isolated feature worktrees.
 Scope: the approved CPU/RAM milestone in `docs/spec.md`, not the later GPU,
 llama-swap, Docker, or deployment integrations.
 Baseline: initial documentation preserved in commit `02372a6`.
@@ -10,7 +11,8 @@ Baseline: initial documentation preserved in commit `02372a6`.
 First prove the high-risk stream lifecycle and browser security boundary using
 synthetic data. Then connect a minimal UI, add real metrics, and polish charts
 and recovery states. One writer per slice; test and checkpoint each increment.
-Do not install tooling or modify services until implementation begins.
+Implementation is authorized. Tooling may be installed through the project-local
+mise configuration; modifying system services remains outside scope.
 
 Go serves a static React frontend and the versioned API in production. Use
 standard `net/http`, no router framework, database, event-bus framework, auth
@@ -219,9 +221,11 @@ history, screenshot/fixture provenance, and distributable artifact paths.
 Do not push, create a remote repository, configure ingress, enable a service,
 or change Docker permissions without explicit permission.
 
-Independent review: separate agy Gemini 3.8 Flash medium for routine plan/code
-review; high-risk security/concurrency changes get a higher-reasoning review.
-Coordinator triages evidence; one writer fixes accepted findings.
+Independent review: separate GPT worker through openai-codex, as explicitly
+required by the owner for this project. No local or non-GPT workers. Choose a
+separate context/model from the implementer where possible; high-risk
+security/concurrency review uses high reasoning. Coordinator triages evidence;
+one writer fixes accepted findings.
 
 ## Dependencies and checkpoints
 
@@ -276,8 +280,12 @@ No reviewer process remained after timeout and no unexpected project edits were
 observed. No independent findings or approval are claimed. A future retry should
 use effective plan mode without that incompatible flag, with an explicit timeout.
 
-## Approval gate
+## Authorized execution
 
-Review this plan and `tasks/todo.md` before implementation. No application code,
-toolchain installation, runtime monitoring, service change, or CI change has
-been performed as part of planning.
+The owner approved implementation and explicitly requested Herdr orchestration,
+GPT-only developers/reviewers, and worktrees for parallel features. Bootstrap
+shared toolchains first, then isolate backend and frontend work. Frontend work
+may proceed against the fixed synthetic contract while transport/security is
+implemented; integrate only after review and verification. The unavailable
+GPT-6.1 Luna worker may be replaced explicitly with available GPT-6 Luna.
+No permission to publish, expose public ingress, or install services is implied.

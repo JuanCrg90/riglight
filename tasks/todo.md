@@ -1,6 +1,8 @@
 # Tasks: Riglight milestone 1
 
-Status: Proposed — review alongside `plan.md`. Tasks are dependency ordered.
+Status: Approved — GPT-only Herdr implementation with isolated feature worktrees.
+Tasks are dependency ordered; the frontend can use the fixed synthetic contract
+in parallel with backend implementation before integration.
 Each task is a bounded increment, normally 1–5 files including tests. Split any
 task that exceeds five files or introduces another independent responsibility.
 Write failing behavior tests before implementation. Stage/commit only verified
@@ -8,7 +10,8 @@ increments, preserving unrelated changes and all hooks.
 
 Bootstrap tasks intentionally introduce tooling progressively; do not expose a
 build/test script before its input files exist. Every introduced check must pass
-before the increment is considered complete. No code has been implemented yet.
+before the increment is considered complete. Completion boxes are updated only
+when the coordinator has verified the integrated result.
 
 ## 1. Pin local tooling
 
