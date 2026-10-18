@@ -33,6 +33,7 @@ mise exec -- pnpm --dir web lint
 mise exec -- pnpm --dir web typecheck
 mise exec -- pnpm --dir web build
 mise exec -- pnpm --dir web test:e2e
+mkdir -p bin
 mise exec -- go test -race ./...
 mise exec -- go vet ./...
 mise exec -- gofmt -l cmd internal

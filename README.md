@@ -23,6 +23,7 @@ Go server (which embeds the built assets):
 mise install
 mise exec -- pnpm --dir web install --frozen-lockfile --ignore-scripts
 mise exec -- pnpm --dir web build
+mkdir -p bin
 mise exec -- go build -trimpath -o bin/riglight ./cmd/riglight
 ```
 
