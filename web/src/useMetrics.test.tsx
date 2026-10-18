@@ -66,6 +66,29 @@ describe('useMetrics', () => {
     expect(result.current.memoryFresh).toBe(false);
   });
 
+  it('adds a history gap when the initial snapshot is already stale', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    act(() => FakeEventSource.instances[0]!.send(frame('2026-01-01T00:00:00Z', STALE_AFTER_MS)));
+    expect(result.current.cpuFresh).toBe(false);
+    expect(result.current.cpuHistory.at(-1)?.value).toBeNull();
+    expect(result.current.memoryHistory.at(-1)?.value).toBeNull();
+  });
+
+  it('keeps stale reconnect snapshots as chart gaps', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.onerror?.());
+    act(() => source.send(frame('2026-01-01T00:00:00Z', STALE_AFTER_MS + 1)));
+    expect(result.current.connection).toBe('CONNECTED');
+    expect(result.current.cpuFresh).toBe(false);
+    expect(result.current.cpuHistory.at(-1)?.value).toBeNull();
+    expect(result.current.memoryHistory.at(-1)?.value).toBeNull();
+  });
+
   it('uses server age regardless of clock skew and honors aged cached samples', () => {
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);

@@ -71,17 +71,17 @@ export function useMetrics(): View {
       const cpuIdentity = sample.cpu.status === 'AVAILABLE'
         ? JSON.stringify([sample.cpu.status, sample.cpu.sampledAt, sample.cpu.utilizationPercent])
         : JSON.stringify([sample.cpu.status, sample.sampledAt]);
-      const cpuPoint = appendPoint(cpuHistory, cpuHistoryIdentities, cpuIdentity, {
-        at: sample.sampledAt, value: sample.cpu.status === 'AVAILABLE' ? sample.cpu.utilizationPercent : null,
-      });
+      const cpuPoint = appendPoint(cpuHistory, cpuHistoryIdentities,
+        sample.cpu.status === 'AVAILABLE' && !cpuFresh ? `stale:${cpuIdentity}` : cpuIdentity,
+        { at: sample.sampledAt, value: sample.cpu.status === 'AVAILABLE' && cpuFresh ? sample.cpu.utilizationPercent : null });
       cpuHistory = cpuPoint.history;
       cpuHistoryIdentities = cpuPoint.identities;
       const memoryIdentity = sample.memory.status === 'AVAILABLE'
         ? JSON.stringify([sample.memory.status, sample.memory.sampledAt, sample.memory.usedBytes, sample.memory.totalBytes])
         : JSON.stringify([sample.memory.status, sample.sampledAt]);
-      const memoryPoint = appendPoint(memoryHistory, memoryHistoryIdentities, memoryIdentity, {
-        at: sample.sampledAt, value: sample.memory.status === 'AVAILABLE' ? sample.memory.usedBytes! / sample.memory.totalBytes! * 100 : null,
-      });
+      const memoryPoint = appendPoint(memoryHistory, memoryHistoryIdentities,
+        sample.memory.status === 'AVAILABLE' && !memoryFresh ? `stale:${memoryIdentity}` : memoryIdentity,
+        { at: sample.sampledAt, value: sample.memory.status === 'AVAILABLE' && memoryFresh ? sample.memory.usedBytes! / sample.memory.totalBytes! * 100 : null });
       memoryHistory = memoryPoint.history;
       memoryHistoryIdentities = memoryPoint.identities;
       connection = 'CONNECTED';
