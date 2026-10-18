@@ -85,8 +85,11 @@ Example below is synthetic. `/api/v1/gpus` and `event: gpus` carry the same JSON
 }
 ```
 
+- GPU mode is DISABLED only when overview status is DISABLED; otherwise mode is
+  DEMO or LIVE, matching CPU/RAM. It describes GPU collection, not hardware.
 - Overview status: DISABLED, NOT_READY, AVAILABLE, UNAVAILABLE, UNSUPPORTED.
-  AVAILABLE means the inventory was obtained, not that every sensor is healthy.
+  AVAILABLE requires 1–16 devices and means inventory was obtained, not that
+  every sensor is healthy. Truncation requires exactly 16 returned devices.
 - reasonCode is null or a fixed generic code: DISABLED, UNSUPPORTED_PLATFORM,
   BACKEND_UNAVAILABLE, DRIVER_UNAVAILABLE, NO_DEVICES, QUERY_FAILED, DEVICE_LIMIT.
   AVAILABLE has null reason when not truncated, and DEVICE_LIMIT when truncated.
