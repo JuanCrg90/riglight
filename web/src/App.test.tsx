@@ -1,15 +1,32 @@
-import { render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { Sparkline } from './Sparkline';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('dashboard shell', () => {
   it('draws separate chart segments across missing samples', () => {
     const { container } = render(<Sparkline label="CPU history" values={[10, null, 20]} />);
     expect(screen.getByRole('img', { name: 'CPU history' })).toBeVisible();
     expect(container.querySelectorAll('path.sparkline-path')).toHaveLength(2);
+  });
+
+  it('labels binary memory values in GiB', () => {
+    let onSnapshot: ((event: Event) => void) | undefined;
+    vi.stubGlobal('EventSource', class {
+      addEventListener(_type: string, listener: EventListener) { onSnapshot = listener; }
+      removeEventListener() {}
+      close() {}
+    });
+    render(<App />);
+    const timestamp = '2026-01-01T00:00:00Z';
+    act(() => onSnapshot?.({ data: JSON.stringify({
+      schemaVersion: 1, sampledAt: timestamp, mode: 'DEMO',
+      cpu: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, utilizationPercent: 40 },
+      memory: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, usedBytes: 8_000_000_000, totalBytes: 16_000_000_000 },
+    }) } as MessageEvent));
+    expect(screen.getByRole('region', { name: 'Memory used' })).toHaveTextContent('7.5 / 14.9 GiB');
   });
 
   it('describes the pending state without inventing telemetry', () => {
