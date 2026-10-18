@@ -15,8 +15,9 @@ NVIDIA GPU monitoring is also implemented and must be explicitly enabled with
 service installation remain out of scope. See the [CPU/RAM specification](docs/spec.md),
 [GPU specification](docs/spec-gpu.md), [GPU implementation plan](tasks/gpu-plan.md),
 and [GPU task list](tasks/gpu-todo.md) for scope and project state.
-[Verification results](docs/verification.md) include passing Chromium coverage;
-WebKit/Safari verification remains incomplete.
+[CPU/RAM verification](docs/verification.md) and
+[GPU verification](docs/verification-gpu.md) record passing combined checks and
+Chromium coverage; WebKit/Safari verification remains incomplete.
 
 ## Run
 

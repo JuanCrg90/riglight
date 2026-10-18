@@ -1,5 +1,8 @@
 # Milestone 1 verification
 
+This report records the CPU/RAM milestone. See the subsequent
+[GPU increment verification](verification-gpu.md) for current combined checks.
+
 Status: implemented and independently reviewed; the complete browser/platform
 verification gate remains partially blocked. Nothing has been published or
 pushed, and no system service or public ingress has been configured.
