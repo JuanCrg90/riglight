@@ -1,10 +1,12 @@
 # Contributing
 
-Thanks for helping improve Riglight. Milestone 1 is limited to read-only CPU
-and RAM monitoring on one Linux host. Consult [docs/spec.md](docs/spec.md),
-[tasks/plan.md](tasks/plan.md), and [tasks/todo.md](tasks/todo.md) before making
-changes; later GPU, Docker, llama-swap, deployment, and data-retention work needs
-its own approved increment.
+Thanks for helping improve Riglight. The implemented scope includes read-only
+CPU/RAM monitoring and explicitly opt-in, read-only NVIDIA GPU monitoring on
+one Linux host. Consult [docs/spec.md](docs/spec.md), [docs/spec-gpu.md](docs/spec-gpu.md),
+[tasks/plan.md](tasks/plan.md), [tasks/todo.md](tasks/todo.md),
+[tasks/gpu-plan.md](tasks/gpu-plan.md), and [tasks/gpu-todo.md](tasks/gpu-todo.md)
+before making changes. Docker, llama-swap, deployment, and data-retention work
+remain separate and require approval.
 
 ## Privacy and safety
 
@@ -17,6 +19,12 @@ its own approved increment.
   Docker configuration.
 - Dependency install scripts remain blocked unless a specific script is
   inspected and approved. Do not broadly enable lifecycle scripts.
+- GPU native code is Linux/cgo-specific; retain and verify the no-cgo and
+  unsupported-platform CPU/demo builds. A GPU driver or OS-level installation
+  is not required to compile or run unit tests.
+- Use synthetic fixtures only; never use real GPU hardware readings in unit or
+  browser test fixtures. Live hardware checks are separate, explicit read-only
+  verification and must not expose identifiers or readings in public artifacts.
 - Preserve upstream legal attribution and notices.
 - The existing Git author identity is intentionally selected by the repository
   owner; contributions do not anonymize or replace that attribution.

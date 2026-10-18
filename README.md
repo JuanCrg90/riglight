@@ -9,10 +9,12 @@ remote shell or control plane.
 
 ## Status and scope
 
-Milestone 1 covers CPU utilization and RAM used/total. GPU, Docker, llama-swap,
-public ingress, authentication, persistence, and service installation are not
-included. See the [specification](docs/spec.md), [implementation plan](tasks/plan.md),
-and [task list](tasks/todo.md) for acceptance criteria and current project state.
+Milestone 1 covers CPU utilization and RAM used/total. Optional, read-only
+NVIDIA GPU monitoring is also implemented and must be explicitly enabled with
+`--gpu`; Docker, llama-swap, public ingress, authentication, persistence, and
+service installation remain out of scope. See the [CPU/RAM specification](docs/spec.md),
+[GPU specification](docs/spec-gpu.md), [GPU implementation plan](tasks/gpu-plan.md),
+and [GPU task list](tasks/gpu-todo.md) for scope and project state.
 [Verification results](docs/verification.md) include passing Chromium coverage;
 WebKit/Safari verification remains incomplete.
 
@@ -114,6 +116,18 @@ it fails, Riglight retains a generic unsupported/unavailable result and requires
 a restart to retry. After successful initialization, sensors are polled every
 two seconds. Riglight does not install, upgrade, or otherwise change drivers or
 system configuration.
+
+Start live GPU collection explicitly:
+
+```sh
+./bin/riglight --gpu
+```
+
+For synthetic GPU readings without initializing NVML:
+
+```sh
+./bin/riglight --demo --gpu
+```
 
 See [GPU API details](docs/api.md#gpu-snapshot), [security policy](SECURITY.md),
 and [third-party notices](THIRD_PARTY_NOTICES.md).

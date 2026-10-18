@@ -132,12 +132,16 @@ Example payload (synthetic; not a real device):
 ```
 
 Overview states are `DISABLED`, `NOT_READY`, `AVAILABLE`, `UNAVAILABLE`, and
-`UNSUPPORTED`; `AVAILABLE` means inventory was obtained, not that every sensor
-is healthy. Fixed generic reason codes are `DISABLED`, `UNSUPPORTED_PLATFORM`,
+`UNSUPPORTED`. `mode` is `DISABLED` only when overview `status` is `DISABLED`;
+otherwise it is `DEMO` or `LIVE`. `AVAILABLE` means inventory was obtained, not
+that every sensor is healthy, and has 1–16 reported devices. Fixed generic
+reason codes are `DISABLED`, `UNSUPPORTED_PLATFORM`,
 `BACKEND_UNAVAILABLE`, `DRIVER_UNAVAILABLE`, `NO_DEVICES`, `QUERY_FAILED`, and
 `DEVICE_LIMIT`. Truncation at the 16-device limit sets `isTruncated` and
-`DEVICE_LIMIT`. Unsupported/unavailable overview states have an empty device
-list. Per-metric states are `AVAILABLE`, `NOT_READY`, `UNAVAILABLE`, or
+`DEVICE_LIMIT`. If inventory exceeds 16 devices, exactly 16 are reported and
+`isTruncated` is true with `reasonCode` `DEVICE_LIMIT`. Unsupported,
+unavailable, not-ready, and disabled overview states have an empty device list.
+Per-metric states are `AVAILABLE`, `NOT_READY`, `UNAVAILABLE`, or
 `UNSUPPORTED`; non-available measurements, timestamps, and ages are null, never
 zero-substituted. Freshness is per sensor and becomes stale after six seconds
 without valid sensor data.

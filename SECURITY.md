@@ -2,10 +2,13 @@
 
 ## Scope
 
-Milestone 1 is a loopback-bound, read-only dashboard for CPU and RAM on one
-Linux host. It does not provide authentication, public ingress, GPU/Docker/
-llama-swap integrations, persistence, or service installation. Do not assume a
-private network by itself is an authorization boundary.
+Riglight is a loopback-bound, read-only dashboard for CPU and RAM on one Linux
+host, with optional NVIDIA GPU monitoring enabled only by `--gpu`. GPU output
+is limited to numeric device indices and allowlisted metrics; it does not query
+or expose device identifiers, process information, or controls. Riglight does
+not provide authentication, public ingress, Docker or llama-swap integrations,
+persistence, or service installation. Do not assume a private network by itself
+is an authorization boundary.
 
 ## Reporting a vulnerability
 
@@ -21,9 +24,12 @@ logs, prompts, or configuration.
 
 Keep the server bound to `127.0.0.1` and use an SSH tunnel for remote browser
 access. Do not expose it on a public interface or treat VPN reachability alone
-as authorization. Use `--demo` for screenshots and examples; demo mode is
-synthetic and does not read host metrics. Live mode collects CPU and RAM only.
-For frontend development, run the backend with `--demo --dev` and run Vite in a
+as authorization. GPU collection is disabled by default; pass `--gpu` to opt in
+to live NVIDIA metrics. Use `--demo` for screenshots and examples; demo mode is
+synthetic and does not read host metrics. `--demo --gpu` produces synthetic GPU
+metrics without initializing NVML, while `--demo` alone keeps GPU monitoring
+disabled. Live CPU/RAM collection remains independent of the GPU option. For
+frontend development, run the backend with `--demo --dev` and run Vite in a
 separate terminal on its configured loopback port; `--dev` only permits that
 origin and does not start the frontend server.
 
