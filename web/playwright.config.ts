@@ -9,6 +9,7 @@ const binary = process.env.RIGLIGHT_BINARY
   : resolve(repositoryRoot, 'bin', 'riglight');
 const baseURL = 'http://127.0.0.1:19090';
 const gpuBaseURL = 'http://127.0.0.1:19091';
+const modelsBaseURL = 'http://127.0.0.1:19092';
 
 export default defineConfig({
   testDir: './e2e',
@@ -18,10 +19,12 @@ export default defineConfig({
   reporter: 'list',
   use: { baseURL, trace: 'off', screenshot: 'off', video: 'off' },
   projects: [
-    { name: 'chromium', testIgnore: '**/gpu.spec.ts', use: { ...devices['Desktop Chrome'] } },
-    { name: 'webkit', testIgnore: '**/gpu.spec.ts', use: { ...devices['Desktop Safari'] } },
+    { name: 'chromium', testIgnore: ['**/gpu.spec.ts', '**/models.spec.ts'], use: { ...devices['Desktop Chrome'] } },
+    { name: 'webkit', testIgnore: ['**/gpu.spec.ts', '**/models.spec.ts'], use: { ...devices['Desktop Safari'] } },
     { name: 'chromium-gpu', testMatch: '**/gpu.spec.ts', use: { ...devices['Desktop Chrome'], baseURL: gpuBaseURL } },
     { name: 'webkit-gpu', testMatch: '**/gpu.spec.ts', use: { ...devices['Desktop Safari'], baseURL: gpuBaseURL } },
+    { name: 'chromium-models', testMatch: '**/models.spec.ts', workers: 2, use: { ...devices['Desktop Chrome'], baseURL: modelsBaseURL } },
+    { name: 'webkit-models', testMatch: '**/models.spec.ts', workers: 2, use: { ...devices['Desktop Safari'], baseURL: modelsBaseURL } },
   ],
   webServer: [
     {
@@ -35,6 +38,13 @@ export default defineConfig({
       command: `"${binary}" --demo --gpu --listen 127.0.0.1:19091`,
       cwd: repositoryRoot,
       url: gpuBaseURL,
+      timeout: 30_000,
+      reuseExistingServer: false,
+    },
+    {
+      command: `"${binary}" --demo --gpu --llama-swap --listen 127.0.0.1:19092`,
+      cwd: repositoryRoot,
+      url: modelsBaseURL,
       timeout: 30_000,
       reuseExistingServer: false,
     },
