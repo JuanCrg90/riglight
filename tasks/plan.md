@@ -1,7 +1,8 @@
 # Implementation plan: Riglight milestone 1
 
-Status: Approved — implementation authorized with GPT-only Herdr workers and
-isolated feature worktrees.
+Status: Milestone 1 implemented, independently reviewed, and integrated with
+GPT-only Herdr workers and isolated feature worktrees. The full browser gate
+remains partially blocked; see `../docs/verification.md`.
 Scope: the approved CPU/RAM milestone in `docs/spec.md`, not the later GPU,
 llama-swap, Docker, or deployment integrations.
 Baseline: initial documentation preserved in commit `02372a6`.

@@ -13,6 +13,8 @@ Milestone 1 covers CPU utilization and RAM used/total. GPU, Docker, llama-swap,
 public ingress, authentication, persistence, and service installation are not
 included. See the [specification](docs/spec.md), [implementation plan](tasks/plan.md),
 and [task list](tasks/todo.md) for acceptance criteria and current project state.
+[Verification results](docs/verification.md) include passing Chromium coverage;
+WebKit/Safari verification remains incomplete.
 
 ## Run
 

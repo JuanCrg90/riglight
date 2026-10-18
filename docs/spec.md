@@ -1,6 +1,7 @@
 # Spec: Riglight
 
-Status: Approved for milestone 1; GPT-only Herdr implementation authorized.
+Status: Milestone 1 implemented and reviewed; WebKit/Safari verification remains
+incomplete. See `verification.md` for checks, results, and limitations.
 
 ## Objective
 
@@ -277,11 +278,13 @@ Never:
 
 ## Review gate and open questions
 
-Milestone 1 was approved when the owner authorized continuing and requested an
-initial Git checkpoint. That checkpoint preserves the original draft. Review
-`tasks/plan.md` and `tasks/todo.md` before application implementation.
+Milestone 1 was approved, implemented in isolated GPT-only Herdr worktrees,
+reviewed, and integrated. The initial Git checkpoint preserves the original
+draft. See `tasks/todo.md` and `docs/verification.md` for implementation evidence
+and the remaining full-browser verification gate.
 
-- Review the proposed implementation sequence and dependency pins.
+- Complete WebKit native-library/Safari verification before claiming full Mac
+  browser compatibility.
 - Confirm GPU vendor and llama-swap version when starting those integrations;
   these are not prerequisites for the CPU/RAM milestone.
 - Private HTTPS proxy/access policy and log-viewer limits are decisions for their

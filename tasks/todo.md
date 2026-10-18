@@ -1,8 +1,9 @@
 # Tasks: Riglight milestone 1
 
-Status: Approved — GPT-only Herdr implementation with isolated feature worktrees.
-Tasks are dependency ordered; the frontend can use the fixed synthetic contract
-in parallel with backend implementation before integration.
+Status: Milestone-1 implementation integrated through GPT-only Herdr workers and
+isolated feature worktrees. Full browser verification is partially blocked by
+missing WebKit native libraries; see `../docs/verification.md` for evidence.
+Completed implementation checkboxes do not imply every browser/platform passed.
 Each task is a bounded increment, normally 1–5 files including tests. Split any
 task that exceeds five files or introduces another independent responsibility.
 Write failing behavior tests before implementation. Stage/commit only verified
@@ -15,7 +16,7 @@ when the coordinator has verified the integrated result.
 
 ## 1. Pin local tooling
 
-- [ ] Pin Go 1.27.2 and Node 24.22.0 in mise.toml; document install, local tool
+- [x] Pin Go 1.27.2 and Node 24.22.0 in mise.toml; document install, local tool
   selection, and required C compiler for race checks without system changes.
 - Acceptance: `mise exec -- go version` and `mise exec -- node --version` match;
   global tool selections remain unchanged; no service or privileged install.
@@ -25,7 +26,7 @@ when the coordinator has verified the integrated result.
 
 ## 2. Establish sample and privacy contracts
 
-- [ ] Add typed CPU/memory snapshots and strict allowlist serialization; add
+- [x] Add typed CPU/memory snapshots and strict allowlist serialization; add
   synthetic success, not-ready, and unavailable contract fixtures/tests.
 - Acceptance: JSON exactly matches the plan; invalid/nonfinite values are
   rejected; NOT_READY/UNAVAILABLE serialize null values, not fabricated zeroes.
@@ -36,12 +37,12 @@ when the coordinator has verified the integrated result.
 
 ## Checkpoint A: local contracts
 
-- [ ] Check newly introduced Go code is gofmt-clean and tests/vet pass.
-- [ ] Review the public allowlist and schema examples before consumers are added.
+- [x] Check newly introduced Go code is gofmt-clean and tests/vet pass.
+- [x] Review the public allowlist and schema examples before consumers are added.
 
 ## 3. Prove synthetic sample fan-out
 
-- [ ] Implement a shared latest snapshot, atomic initial subscription, and
+- [x] Implement a shared latest snapshot, atomic initial subscription, and
   capacity-one subscriber queues, with one deterministic synthetic source.
 - Acceptance: no per-subscriber collection; no stale-first-sample ordering;
   slow consumers do not block updates and unsubscribe is idempotent/race-free.
@@ -52,7 +53,7 @@ when the coordinator has verified the integrated result.
 
 ## 4. Secure the HTTP boundary
 
-- [ ] Add exact Host/Origin checks, response headers, method validation, and
+- [x] Add exact Host/Origin checks, response headers, method validation, and
   health/snapshot routes; no listener or live host collector is needed yet.
 - Acceptance: foreign/malformed hosts, hostile/null origins, and mutable methods
   fail; allowed local GETs return the documented shape without private errors.
@@ -63,7 +64,7 @@ when the coordinator has verified the integrated result.
 
 ## 5. Stream snapshots safely
 
-- [ ] Add SSE framing, initial snapshot, flush/deadline handling, eight-client
+- [x] Add SSE framing, initial snapshot, flush/deadline handling, eight-client
   limit, and cleanup on disconnect/application cancellation.
 - Acceptance: synthetic end-to-end stream receives updates; no network write can
   block publication; over-limit/method/host/origin failures allocate no subscriber.
@@ -75,12 +76,12 @@ when the coordinator has verified the integrated result.
 
 ## Checkpoint B: synthetic transport
 
-- [ ] Go tests/race/vet/format checks pass, including security/stream abuse cases.
-- [ ] Review transport lifecycle evidence before adding live host access.
+- [x] Go tests/race/vet/format checks pass, including security/stream abuse cases.
+- [x] Review transport lifecycle evidence before adding live host access.
 
 ## 6. Bootstrap reviewed frontend dependencies
 
-- [ ] Add exact dependency/tool versions, the web installation boundary and
+- [x] Add exact dependency/tool versions, the web installation boundary and
   fail-closed dependency-script policy; review the resulting frozen lockfile.
 - Acceptance: install succeeds with scripts blocked; engine/peer warnings are
   resolved, not suppressed; native dependency/script requirements are recorded.
@@ -91,7 +92,7 @@ when the coordinator has verified the integrated result.
 
 ## 7. Render a static demo shell
 
-- [ ] Add index, React entrypoint, minimal accessible App and TypeScript config;
+- [x] Add index, React entrypoint, minimal accessible App and TypeScript config;
   introduce build/typecheck scripts only with their working source inputs.
 - Acceptance: a loopback development server renders clearly labeled synthetic
   CPU/RAM; frontend build and strict typecheck pass with no external assets.
@@ -104,7 +105,7 @@ when the coordinator has verified the integrated result.
 
 ## 8. Activate frontend quality tooling
 
-- [ ] Configure the reviewed React plugin, jsdom/Vitest, strict ESLint checks,
+- [x] Configure the reviewed React plugin, jsdom/Vitest, strict ESLint checks,
   and explicit loopback Vite/API proxy behavior without disabling backend checks.
 - Acceptance: frontend tests, lint, types, and build pass; Strict Mode is enabled;
   dev origin policy is explicit and production remains same-origin.
@@ -116,12 +117,12 @@ when the coordinator has verified the integrated result.
 
 ## Checkpoint C: frontend foundation
 
-- [ ] Demonstrate the synthetic UI; tests/lint/types/build and Go checks pass.
-- [ ] Review data transport and privacy decisions before connecting the browser.
+- [x] Demonstrate the synthetic UI; tests/lint/types/build and Go checks pass.
+- [x] Review data transport and privacy decisions before connecting the browser.
 
 ## 9. Consume validated SSE data
 
-- [ ] Add runtime sample validation and a single cleaned-up EventSource hook;
+- [x] Add runtime sample validation and a single cleaned-up EventSource hook;
   replace the static App samples with the hook's live synthetic feed.
 - Acceptance: invalid frames never advance freshness; reconnect/Strict Mode
   cycles leak no resources; there is no competing initial snapshot fetch.
@@ -133,7 +134,7 @@ when the coordinator has verified the integrated result.
 
 ## 10. Serve the production demo
 
-- [ ] Embed compiled assets and add a loopback-only CLI with demo selection,
+- [x] Embed compiled assets and add a loopback-only CLI with demo selection,
   signals, collector lifecycle, stream cancellation, and bounded HTTP shutdown.
 - Acceptance: a built executable serves UI/API/SSE; demo does not create a live
   collector; invalid listen addresses fail without leaking paths/configuration.
@@ -146,13 +147,13 @@ when the coordinator has verified the integrated result.
 
 ## Checkpoint D: end-to-end demo
 
-- [ ] Demonstrate real SSE updates from the production executable with synthetic
+- [x] Demonstrate real SSE updates from the production executable with synthetic
   data; confirm shutdown/disconnect behavior and no third-party runtime requests.
-- [ ] Independent review covers HTTP/SSE/CLI security before live collection.
+- [x] Independent review covers HTTP/SSE/CLI security before live collection.
 
 ## 11. Collect real CPU/RAM
 
-- [ ] Add reviewed gopsutil dependency and a single allowlisted Linux collector;
+- [x] Add reviewed gopsutil dependency and a single allowlisted Linux collector;
   inject collection dependencies to preserve deterministic synthetic tests.
 - Acceptance: CPU baseline/deltas and memory totals are correct; per-metric
   failures are independent; demo never calls live metrics, even during startup.
@@ -165,7 +166,7 @@ when the coordinator has verified the integrated result.
 
 ## 12. Show bounded history and recovery states
 
-- [ ] Add 450-sample SVG sparklines and responsive styling; surface mode,
+- [x] Add 450-sample SVG sparklines and responsive styling; surface mode,
   connectivity, freshness, and independent unavailable states accessibly.
 - Acceptance: old/duplicate samples and clock skew cannot fake freshness;
   unavailable intervals are gaps; no persistent storage or external requests.
@@ -178,13 +179,13 @@ when the coordinator has verified the integrated result.
 
 ## Checkpoint E: usable monitoring
 
-- [ ] Demonstrate live CPU/RAM locally and demo recovery states without retaining
+- [x] Demonstrate live CPU/RAM locally and demo recovery states without retaining
   personal output. All applicable backend/frontend checks pass.
-- [ ] Review accessibility and freshness behavior before final browser coverage.
+- [x] Review accessibility and freshness behavior before final browser coverage.
 
 ## 13. Automate browser/privacy smoke checks
 
-- [ ] Configure Chromium/WebKit tests against production demo mode; check stream
+- [x] Configure Chromium/WebKit tests against production demo mode; check stream
   updates/reconnect, responsive layout, security headers and outbound requests.
 - Acceptance: no real metrics, logs, external requests, or personal screenshots;
   demo never constructs a host collector; browser failures identify true blockers.
@@ -197,7 +198,7 @@ when the coordinator has verified the integrated result.
 
 ## 14. Document safe development and use
 
-- [ ] Replace design-stage README with verified setup/build/run/check commands,
+- [x] Replace design-stage README with verified setup/build/run/check commands,
   same-port SSH tunneling, limitations, and contribution/security guidance.
 - Acceptance: clean setup is reproducible; notices cover shipped dependencies;
   no public ingress, service enablement, Docker permissions, or real identifiers.
@@ -208,12 +209,14 @@ when the coordinator has verified the integrated result.
 
 ## Checkpoint F: completion gate
 
-- [ ] Run the agreed format/tests/race/vet/build/UI/browser/audit checks.
-- [ ] Run pinned govulncheck and Gitleaks; inspect assets/binary for local paths
+- [ ] Complete the full browser/platform gate: Chromium passes, but two WebKit
+  browser tests cannot launch until native libraries are available; Safari on a
+  Mac is unverified. Format/tests/race/vet/build/UI/audit checks otherwise pass.
+- [x] Run pinned govulncheck and Gitleaks; inspect assets/binary for local paths
   and review tracked content/history for personal data beyond scanner coverage.
-- [ ] Independent review receives intent, diff and verification evidence; triage
+- [x] Independent review receives intent, diff and verification evidence; triage
   findings, apply accepted fixes with one writer, and reverify changed behavior.
-- [ ] Record any missing tool, Mac/Safari verification, hardware, or advisory
+- [x] Record any missing tool, Mac/Safari verification, hardware, or advisory
   service as an explicit limitation. Do not claim skipped checks passed.
-- [ ] Keep public publication, remote repository creation, service installation,
+- [x] Keep public publication, remote repository creation, service installation,
   GPU, Docker, and llama-swap outside this milestone without further approval.

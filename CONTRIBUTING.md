@@ -32,12 +32,12 @@ mise exec -- pnpm --dir web test
 mise exec -- pnpm --dir web lint
 mise exec -- pnpm --dir web typecheck
 mise exec -- pnpm --dir web build
-mise exec -- pnpm --dir web test:e2e
 mkdir -p bin
 mise exec -- go test -race ./...
 mise exec -- go vet ./...
-mise exec -- gofmt -l cmd internal
+mise exec -- gofmt -l cmd internal web
 mise exec -- go build -trimpath -o bin/riglight ./cmd/riglight
+mise exec -- pnpm --dir web test:e2e
 ```
 
 Build frontend assets before Go tests or builds that embed them. A clean
@@ -46,7 +46,7 @@ and report commands, results, and unavailable checks accurately. Browser tests
 require the corresponding installed browser and system libraries; distinguish
 Chromium/WebKit results and disclose missing platform support.
 
-Before submitting, inspect `git diff --check` and the full diff. Never include
+Before submitting, inspect `git --no-pager diff --check` and the full diff. Never include
 real operational data in a test artifact. See [SECURITY.md](SECURITY.md) for
 private vulnerability reports and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 for dependency notices.
