@@ -21,24 +21,40 @@ Go server (which embeds the built assets):
 
 ```sh
 mise install
-pnpm --dir web install --frozen-lockfile --ignore-scripts
-pnpm --dir web build
+mise exec -- pnpm --dir web install --frozen-lockfile --ignore-scripts
+mise exec -- pnpm --dir web build
 mise exec -- go build -trimpath -o bin/riglight ./cmd/riglight
 ```
 
-Run synthetic data without reading host metrics:
+The normal live run reads CPU and RAM metrics only and listens on
+`127.0.0.1:9090` by default:
 
 ```sh
-mise exec -- go run ./cmd/riglight --demo
+./bin/riglight
 ```
 
-By default, the server listens only on `127.0.0.1:9090`. Live mode reads CPU
-and RAM metrics only. The optional development mode allows the local Vite
-origin `http://127.0.0.1:5173`:
+Open `http://127.0.0.1:9090` in a browser. For synthetic demo data without
+reading host metrics:
 
 ```sh
-mise exec -- go run ./cmd/riglight --dev
+./bin/riglight --demo
 ```
+
+For frontend development, use two terminals. Start the backend in explicit
+synthetic/dev mode:
+
+```sh
+mise exec -- go run ./cmd/riglight --demo --dev
+```
+
+In the second terminal start Vite, which is configured for loopback port 5173:
+
+```sh
+mise exec -- pnpm --dir web exec vite
+```
+
+Visit `http://127.0.0.1:5173`. `--dev` permits this local Vite origin; it does
+not start the Vite server.
 
 For remote viewing, keep Riglight loopback-bound and use an SSH tunnel from the
 client:
@@ -54,10 +70,12 @@ network access or install a service.
 ## Development checks
 
 Available frontend scripts include `test` (one-shot Vitest), `lint`,
-`typecheck`, and `build`. Frontend dependency install scripts are blocked by
-default. Follow the [plan](tasks/plan.md) for command ordering and verification;
-never claim a check passed unless it was run successfully. Browser `test:e2e`
-is planned, not currently listed as a package script.
+`typecheck`, `build`, and `test:e2e` (Playwright). For example, run frontend
+checks with `mise exec -- pnpm --dir web test` and browser tests with
+`mise exec -- pnpm --dir web test:e2e`. Frontend dependency install scripts are
+blocked by default. Follow the [plan](tasks/plan.md) for command ordering and
+verification; never claim a check passed unless it was run successfully.
+Browser/platform coverage depends on available browsers and system libraries.
 
 ## Privacy
 

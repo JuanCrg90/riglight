@@ -27,11 +27,12 @@ Use the pinned versions through mise. From the repository root:
 
 ```sh
 mise install
-pnpm --dir web install --frozen-lockfile --ignore-scripts
-pnpm --dir web test
-pnpm --dir web lint
-pnpm --dir web typecheck
-pnpm --dir web build
+mise exec -- pnpm --dir web install --frozen-lockfile --ignore-scripts
+mise exec -- pnpm --dir web test
+mise exec -- pnpm --dir web lint
+mise exec -- pnpm --dir web typecheck
+mise exec -- pnpm --dir web build
+mise exec -- pnpm --dir web test:e2e
 mise exec -- go test -race ./...
 mise exec -- go vet ./...
 mise exec -- gofmt -l cmd internal
@@ -40,8 +41,9 @@ mise exec -- go build -trimpath -o bin/riglight ./cmd/riglight
 
 Build frontend assets before Go tests or builds that embed them. A clean
 `gofmt -l` check has empty output. Run only checks applicable to your change,
-and report commands, results, and unavailable checks accurately. The frontend
-package currently has no `test:e2e` script; browser testing remains planned.
+and report commands, results, and unavailable checks accurately. Browser tests
+require the corresponding installed browser and system libraries; distinguish
+Chromium/WebKit results and disclose missing platform support.
 
 Before submitting, inspect `git diff --check` and the full diff. Never include
 real operational data in a test artifact. See [SECURITY.md](SECURITY.md) for

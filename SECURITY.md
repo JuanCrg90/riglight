@@ -23,6 +23,9 @@ Keep the server bound to `127.0.0.1` and use an SSH tunnel for remote browser
 access. Do not expose it on a public interface or treat VPN reachability alone
 as authorization. Use `--demo` for screenshots and examples; demo mode is
 synthetic and does not read host metrics. Live mode collects CPU and RAM only.
+For frontend development, run the backend with `--demo --dev` and run Vite in a
+separate terminal on its configured loopback port; `--dev` only permits that
+origin and does not start the frontend server.
 
 No telemetry or external frontend assets are intended. Security checks and
 package installation may contact public registries or advisory services as
