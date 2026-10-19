@@ -77,6 +77,13 @@ Then open `http://127.0.0.1:9090` locally. Do not expose the listener publicly;
 VPN reachability alone is not authorization. The application does not configure
 network access or install a service.
 
+For direct browser access over an existing tailnet, see
+[restricted direct tailnet access](docs/tailnet-access.md). That explicit mode
+binds only an assigned Tailscale interface address, requires an exact MagicDNS
+Host/Origin and admits only configured client IPs. Loopback remains the default;
+no public listener, wildcard CORS, Tailscale policy change or service install is
+performed.
+
 ## Development checks
 
 Available frontend scripts include `test` (one-shot Vitest), `lint`,

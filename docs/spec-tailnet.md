@@ -17,7 +17,10 @@ Existing Tailscale Serve routes must remain untouched.
 - Before binding, require the selected IP actually belongs to an up Linux
   tailscale0 interface. Range membership alone does not prove Tailscale ownership.
   This mode intentionally does not support userspace networking/custom tun names.
-  Keep address/interface lookup injectable or test its pure validation helper;
+  Additionally bind the listening socket to tailscale0 using Linux
+  SO_BINDTODEVICE, so assigned destination IP alone is not the ingress guarantee.
+  Fail closed if socket restriction is unavailable; never add privileges or
+  silently fall back. Keep lookup/socket controls injectable for unit tests;
   no actual host network configuration in unit tests.
 - --host is a bounded lowercase ASCII MagicDNS .ts.net hostname with valid DNS
   labels plus the exact numeric listen port. No URI/userinfo/query/fragment,
@@ -31,6 +34,8 @@ Existing Tailscale Serve routes must remain untouched.
   the only production Origin as http:// + exact configured --host.
 - Add optional Config.AllowedClients []netip.Addr (or equivalently typed field).
   Nil preserves current library behavior; nonnil empty/invalid lists are errors.
+  Server configuration independently validates Tailscale range membership, not
+  only the CLI. Reject duplicate Host headers at the HTTP parsing boundary.
 - When configured, parse the TCP request.RemoteAddr with netip, normalize/unmap
   and require exact client membership before serving anything. Never trust
   X-Forwarded-For, Forwarded, Tailscale identity headers, or browser inputs.

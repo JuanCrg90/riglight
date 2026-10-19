@@ -25,9 +25,16 @@ logs, prompts, or configuration.
 
 ## Safe operation
 
-Keep the server bound to `127.0.0.1` and use an SSH tunnel for remote browser
-access. Do not expose it on a public interface or treat VPN reachability alone
-as authorization. GPU collection is disabled by default; pass `--gpu` to opt in
+Default to `127.0.0.1` with an SSH tunnel for remote browser access. An explicitly
+approved [direct tailnet mode](docs/tailnet-access.md) instead requires a selected
+IP assigned to an up Linux tailscale0, SO_BINDTODEVICE ingress restriction,
+an exact MagicDNS Host/Origin, and exact Tailscale client-IP admission based on
+TCP RemoteAddr. Empty/invalid client lists
+fail closed; forwarded/identity headers never grant access. It does not change
+Serve, Funnel, tailnet access rules or firewall settings. HTTP travels inside
+the encrypted tailnet; no public HTTPS or application login is claimed. Do not
+expose a public/LAN/wildcard listener or treat VPN reachability alone as
+authorization. GPU collection is disabled by default; pass `--gpu` to opt in
 to live NVIDIA metrics. Use `--demo` for screenshots and examples; demo mode is
 synthetic and does not read host metrics. `--demo --gpu` produces synthetic GPU
 metrics without initializing NVML, while `--demo` alone keeps GPU monitoring
