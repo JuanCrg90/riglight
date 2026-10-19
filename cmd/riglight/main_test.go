@@ -84,8 +84,21 @@ func TestParseConfigRequiresCompleteTailnetMode(t *testing.T) {
 	if !valid.tailnet || valid.listen != "100.64.0.10:9090" || valid.host != "workstation.example.ts.net:9090" {
 		t.Errorf("tailnet config = %#v", valid)
 	}
-	if len(valid.allowedClients) != 2 {
-		t.Errorf("allowed clients = %#v, want two", valid.allowedClients)
+	if len(valid.allowedClients) != 2 || valid.allowAllTailnet {
+		t.Errorf("allowed clients = %#v, allow all = %t", valid.allowedClients, valid.allowAllTailnet)
+	}
+
+	all, err := parseConfig([]string{
+		"--tailnet",
+		"--listen", "100.64.0.10:9090",
+		"--host", "workstation.example.ts.net:9090",
+		"--allow-all-tailnet",
+	})
+	if err != nil {
+		t.Fatalf("parse allow-all tailnet config: %v", err)
+	}
+	if !all.allowAllTailnet || all.allowedClients != nil {
+		t.Errorf("allow-all config = %#v", all)
 	}
 
 	for _, arguments := range [][]string{
@@ -93,8 +106,12 @@ func TestParseConfigRequiresCompleteTailnetMode(t *testing.T) {
 		{"--tailnet", "--host", "workstation.example.ts.net:9090", "--allow-client", "100.64.0.20"},
 		{"--tailnet", "--listen", "100.64.0.10:9090", "--allow-client", "100.64.0.20"},
 		{"--tailnet", "--listen", "100.64.0.10:9090", "--host", "workstation.example.ts.net:9090"},
+		{"--tailnet", "--listen", "100.64.0.10:9090", "--host", "workstation.example.ts.net:9090", "--allow-all-tailnet=false"},
+		{"--tailnet", "--listen", "100.64.0.10:9090", "--host", "workstation.example.ts.net:9090", "--allow-all-tailnet", "--allow-client", "100.64.0.20"},
 		{"--host", "workstation.example.ts.net:9090"},
 		{"--allow-client", "100.64.0.20"},
+		{"--allow-all-tailnet"},
+		{"--allow-all-tailnet=false"},
 		{"--tailnet", "--dev", "--listen", "100.64.0.10:9090", "--host", "workstation.example.ts.net:9090", "--allow-client", "100.64.0.20"},
 	} {
 		if _, err := parseConfig(arguments); !errors.Is(err, errInvalidArguments) {

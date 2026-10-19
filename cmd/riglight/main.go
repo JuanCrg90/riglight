@@ -33,16 +33,17 @@ var (
 )
 
 type config struct {
-	listen         string
-	demo           bool
-	dev            bool
-	gpu            bool
-	llamaSwap      bool
-	llamaSwapURL   string
-	tailnet        bool
-	host           string
-	listenIP       netip.Addr
-	allowedClients []netip.Addr
+	listen          string
+	demo            bool
+	dev             bool
+	gpu             bool
+	llamaSwap       bool
+	llamaSwapURL    string
+	tailnet         bool
+	host            string
+	listenIP        netip.Addr
+	allowedClients  []netip.Addr
+	allowAllTailnet bool
 }
 
 type publisher interface {
@@ -150,6 +151,7 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		AllowedOrigin:     "http://" + allowedHost,
 		AdditionalOrigins: origins,
 		AllowedClients:    config.allowedClients,
+		AllowAllTailnet:   config.allowAllTailnet,
 		Context:           application,
 		Assets:            web.Assets,
 	})
@@ -248,12 +250,13 @@ func parseConfig(arguments []string) (config, error) {
 	llamaSwapURL := flags.String("llama-swap-url", defaultLlamaSwapURL, "")
 	tailnet := flags.Bool("tailnet", false, "")
 	host := flags.String("host", "", "")
+	allowAllTailnet := flags.Bool("allow-all-tailnet", false, "")
 	var allowedClientValues stringValues
 	flags.Var(&allowedClientValues, "allow-client", "")
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
-	listenSet, hostSet, allowClientSet, urlSet := false, false, false, false
+	listenSet, hostSet, allowClientSet, allowAllTailnetSet, urlSet := false, false, false, false, false
 	flags.Visit(func(flag *flag.Flag) {
 		switch flag.Name {
 		case "listen":
@@ -262,14 +265,16 @@ func parseConfig(arguments []string) (config, error) {
 			hostSet = true
 		case "allow-client":
 			allowClientSet = true
+		case "allow-all-tailnet":
+			allowAllTailnetSet = true
 		case "llama-swap-url":
 			urlSet = true
 		}
 	})
-	if (*tailnet && (*dev || !listenSet || !hostSet || !allowClientSet)) || (!*tailnet && (hostSet || allowClientSet)) {
+	if (*tailnet && (*dev || !listenSet || !hostSet || (*allowAllTailnet == allowClientSet))) || (!*tailnet && (hostSet || allowClientSet || allowAllTailnetSet)) {
 		return config{}, errInvalidArguments
 	}
-	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, tailnet: *tailnet}
+	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, tailnet: *tailnet, allowAllTailnet: *allowAllTailnet}
 	if *tailnet {
 		canonicalListen, listenIP, ok := canonicalTailnetListen(*listen)
 		if !ok {

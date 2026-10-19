@@ -91,15 +91,26 @@ func validRequestInput(w http.ResponseWriter, request *http.Request) bool {
 }
 
 func (s *Server) clientAllowed(remoteAddress string) bool {
-	if s.allowedClients == nil {
+	if s.allowedClients == nil && !s.allowAllTailnet {
 		return true
 	}
-	address, err := netip.ParseAddrPort(remoteAddress)
-	if err != nil {
+	client, ok := remoteTailnetAddr(remoteAddress)
+	if !ok {
 		return false
 	}
-	_, ok := s.allowedClients[address.Addr().Unmap()]
+	if s.allowAllTailnet {
+		return tailnetIPv4.Contains(client) || tailnetIPv6.Contains(client)
+	}
+	_, ok = s.allowedClients[client]
 	return ok
+}
+
+func remoteTailnetAddr(remoteAddress string) (netip.Addr, bool) {
+	address, err := netip.ParseAddrPort(remoteAddress)
+	if err != nil || address.Addr().Zone() != "" {
+		return netip.Addr{}, false
+	}
+	return address.Addr().Unmap(), true
 }
 
 func (s *Server) originAllowed(origin string) bool {

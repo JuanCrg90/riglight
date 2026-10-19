@@ -25,6 +25,7 @@ type Config struct {
 	AllowedOrigin     string
 	AdditionalOrigins []string
 	AllowedClients    []netip.Addr
+	AllowAllTailnet   bool
 	Now               func() time.Time
 	Context           context.Context
 	Assets            fs.FS
@@ -32,16 +33,17 @@ type Config struct {
 
 // Server serves only the milestone-one health and sample APIs.
 type Server struct {
-	hub            *metrics.Hub
-	gpuHub         *gpu.Hub
-	modelsHub      *llamaswap.Hub
-	allowedHost    string
-	allowedOrigins map[string]struct{}
-	allowedClients map[netip.Addr]struct{}
-	now            func() time.Time
-	context        context.Context
-	assets         fs.FS
-	streamSlots    chan struct{}
+	hub             *metrics.Hub
+	gpuHub          *gpu.Hub
+	modelsHub       *llamaswap.Hub
+	allowedHost     string
+	allowedOrigins  map[string]struct{}
+	allowedClients  map[netip.Addr]struct{}
+	allowAllTailnet bool
+	now             func() time.Time
+	context         context.Context
+	assets          fs.FS
+	streamSlots     chan struct{}
 }
 
 func New(config Config) (*Server, error) {
@@ -54,6 +56,9 @@ func New(config Config) (*Server, error) {
 			return nil, errInvalidConfig
 		}
 		allowedOrigins[origin] = struct{}{}
+	}
+	if config.AllowAllTailnet && config.AllowedClients != nil {
+		return nil, errInvalidConfig
 	}
 	allowedClients, err := validateAllowedClients(config.AllowedClients)
 	if err != nil {
@@ -74,16 +79,17 @@ func New(config Config) (*Server, error) {
 		}
 	}
 	return &Server{
-		hub:            config.Hub,
-		gpuHub:         config.GPUHub,
-		modelsHub:      config.ModelsHub,
-		allowedHost:    config.AllowedHost,
-		allowedOrigins: allowedOrigins,
-		allowedClients: allowedClients,
-		now:            config.Now,
-		context:        config.Context,
-		assets:         assets,
-		streamSlots:    make(chan struct{}, maxSSEClients),
+		hub:             config.Hub,
+		gpuHub:          config.GPUHub,
+		modelsHub:       config.ModelsHub,
+		allowedHost:     config.AllowedHost,
+		allowedOrigins:  allowedOrigins,
+		allowedClients:  allowedClients,
+		allowAllTailnet: config.AllowAllTailnet,
+		now:             config.Now,
+		context:         config.Context,
+		assets:          assets,
+		streamSlots:     make(chan struct{}, maxSSEClients),
 	}, nil
 }
 
