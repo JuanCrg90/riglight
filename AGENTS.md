@@ -9,7 +9,11 @@
   `docs/spec-models.md` and `tasks/models-plan.md`. Default disabled; no auth flow,
   logs, inference, commands/configuration, request activity or model controls.
   Use only the fixed GET /v1/models upstream API; never /running or general SSE.
-- Docker, public ingress, authentication, persistence, logs, and service
+- The owner approved selected-container Docker monitoring through a filtering
+  helper; follow docs/spec-docker.md and tasks/docker-plan.md. Implement/test and
+  prepare instructions only: no actual daemon calls, helper deployment, Docker
+  permission/configuration changes, or restart of the current dashboard.
+- Public ingress, authentication, persistence, logs, controls and service
   installation remain separate unapproved increments.
 - Do not stop/restart the owner's running server. Verify new builds on separate
   test-owned loopback ports; do not inject synthetic stress/benchmark workloads.
