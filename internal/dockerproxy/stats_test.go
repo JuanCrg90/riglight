@@ -3,6 +3,7 @@ package dockerproxy
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,28 @@ func TestCPUUsesOwnBaselineAndTreatsValidZeroAsAvailable(t *testing.T) {
 	}
 }
 
+func TestRawNumbersRejectNullAndInvalidOnlineCPUWithoutFallback(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []json.RawMessage{json.RawMessage(`null`), json.RawMessage(`1.5`), json.RawMessage(`-1`), json.RawMessage(`"1"`)} {
+		if _, ok := rawUint(raw); ok {
+			t.Errorf("accepted %s", raw)
+		}
+	}
+	for _, online := range []json.RawMessage{json.RawMessage(`4097`), json.RawMessage(`1.5`), json.RawMessage(`-1`)} {
+		stats := statsWithCounters(1, 1, 1)
+		stats.CPUStats.OnlineCPUs = online
+		stats.CPUStats.CPUUsage.PercpuUsage = []json.RawMessage{json.RawMessage(`1`)}
+		if got := cpuCount(stats.CPUStats); got != 0 {
+			t.Errorf("online %s count = %d", online, got)
+		}
+	}
+	stats := statsWithCounters(1, 1, 0)
+	stats.CPUStats.CPUUsage.PercpuUsage = []json.RawMessage{json.RawMessage(`1`), json.RawMessage(`2`)}
+	if got := cpuCount(stats.CPUStats); got != 2 {
+		t.Fatalf("zero online fallback = %d", got)
+	}
+}
+
 func TestMemoryRequiresCorrectCacheCounter(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -52,6 +75,29 @@ func TestMemoryRequiresCorrectCacheCounter(t *testing.T) {
 		})
 	}
 }
+func TestMemoryRejectsUnsafeOrOverLimitWorkingSet(t *testing.T) {
+	t.Parallel()
+	for _, memory := range []memoryStats{
+		{Usage: json.RawMessage(`17`), Limit: json.RawMessage(`16`), Stats: map[string]json.RawMessage{"total_inactive_file": json.RawMessage(`0`)}},
+		{Usage: json.RawMessage(`9007199254740992`), Limit: json.RawMessage(`9007199254740992`), Stats: map[string]json.RawMessage{"total_inactive_file": json.RawMessage(`0`)}},
+	} {
+		if got := projectMemory(statsResponse{MemoryStats: memory}, time.Now()); got.Status != containers.MetricUnavailable {
+			t.Fatalf("memory = %#v", got)
+		}
+	}
+}
+
+func TestFullIDRequiresLowercaseHexButNameCanBe64Characters(t *testing.T) {
+	t.Parallel()
+	name := strings.Repeat("g", 64)
+	if !validReference(name) || fullID(name) {
+		t.Fatalf("reference classification failed")
+	}
+	if fullID(strings.Repeat("_", 64)) || fullID(strings.ToUpper(testID)) || !fullID(testID) {
+		t.Fatal("full ID validation failed")
+	}
+}
+
 func statsWithCounters(total, system uint64, cpus uint64) statsResponse {
 	var value statsResponse
 	value.CPUStats.CPUUsage.TotalUsage = json.RawMessage(strconv.FormatUint(total, 10))

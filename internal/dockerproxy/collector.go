@@ -9,7 +9,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -299,7 +298,14 @@ func (c *Collector) projectCPU(alias, id string, stats statsResponse, at time.Ti
 	return containers.AvailableCPU(at, at, percent)
 }
 func cpuCount(stats cpuStats) uint32 {
-	if online, ok := rawUint(stats.OnlineCPUs); ok && online > 0 && online <= 4096 {
+	online, present, valid := rawOptionalUint(stats.OnlineCPUs)
+	if !valid {
+		return 0
+	}
+	if present && online != 0 {
+		if online > 4096 {
+			return 0
+		}
 		return uint32(online)
 	}
 	if len(stats.CPUUsage.PercpuUsage) > 0 && len(stats.CPUUsage.PercpuUsage) <= 4096 {
@@ -325,7 +331,7 @@ func projectMemory(stats statsResponse, at time.Time) containers.Memory {
 	if !exists {
 		return containers.UnsupportedMemory()
 	}
-	if !valid || cache > usage {
+	if usage > 1<<53-1 || !valid || cache > usage || usage-cache > limit {
 		return containers.UnavailableMemory()
 	}
 	return containers.AvailableMemory(at, at, usage-cache, limit)
@@ -343,7 +349,8 @@ func inactiveFile(values map[string]json.RawMessage) (uint64, bool, bool) {
 	return value, true, valid
 }
 func rawUint(raw json.RawMessage) (uint64, bool) {
-	if len(raw) == 0 {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
 		return 0, false
 	}
 	var value uint64
@@ -357,6 +364,23 @@ func rawUint(raw json.RawMessage) (uint64, bool) {
 	}
 	return value, true
 }
+func rawOptionalUint(raw json.RawMessage) (uint64, bool, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return 0, false, true
+	}
+	value, ok := rawUint(raw)
+	return value, true, ok
+}
 func fullID(value string) bool {
-	return len(value) == 64 && validReference(value) && strings.ToLower(value) == value
+	if len(value) != 64 {
+		return false
+	}
+	for index := range value {
+		character := value[index]
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
