@@ -31,7 +31,7 @@ func NewHTTPServer(hub *containers.Hub, host string, now func() time.Time) (*HTT
 }
 func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.headers(w)
-	if r.Host != s.host || r.Header.Get("Origin") != "" {
+	if r.Host != s.host || len(r.Header.Values("Origin")) != 0 {
 		s.error(w, http.StatusForbidden)
 		return
 	}
@@ -40,7 +40,7 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusMethodNotAllowed)
 		return
 	}
-	if r.URL.RawQuery != "" || r.ContentLength != 0 || r.TransferEncoding != nil {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery || r.ContentLength != 0 || r.TransferEncoding != nil {
 		s.error(w, http.StatusBadRequest)
 		return
 	}

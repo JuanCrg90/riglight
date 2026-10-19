@@ -37,11 +37,13 @@ func TestHTTPServerServesOnlyCachedProjectedSnapshot(t *testing.T) {
 	if response.Header().Get("Cache-Control") != "no-store" || response.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("security headers = %#v", response.Header())
 	}
-	for _, request := range []*http.Request{httptest.NewRequest(http.MethodPost, "/api/v1/containers", nil), httptest.NewRequest(http.MethodGet, "/api/v1/containers?x=1", nil), httptest.NewRequest(http.MethodGet, "/api/v1/containers", nil)} {
+	trailingQuery := httptest.NewRequest(http.MethodGet, "/api/v1/containers?", nil)
+	emptyOrigin := httptest.NewRequest(http.MethodGet, "/api/v1/containers", nil)
+	emptyOrigin.Header["Origin"] = []string{""}
+	multipleOrigins := httptest.NewRequest(http.MethodGet, "/api/v1/containers", nil)
+	multipleOrigins.Header["Origin"] = []string{"", "http://127.0.0.1:9123"}
+	for _, request := range []*http.Request{httptest.NewRequest(http.MethodPost, "/api/v1/containers", nil), httptest.NewRequest(http.MethodGet, "/api/v1/containers?x=1", nil), trailingQuery, emptyOrigin, multipleOrigins} {
 		request.Host = "127.0.0.1:9123"
-		if request.Method == http.MethodGet && request.URL.RawQuery == "" {
-			request.Header.Set("Origin", "http://127.0.0.1:9123")
-		}
 		recorder := httptest.NewRecorder()
 		server.ServeHTTP(recorder, request)
 		if recorder.Code == http.StatusOK {
