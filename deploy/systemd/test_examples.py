@@ -165,7 +165,7 @@ class BaseExampleTests(unittest.TestCase):
         self.assertNotIn("0.0.0.0", dashboard)
         self.assertNotIn("0.0.0.0", docker)
 
-    def test_offline_systemd_analyze_verify_substitutes_only_binaries(self):
+    def test_offline_systemd_analyze_verify_consumes_staged_drop_ins(self):
         analyzer = shutil.which("systemd-analyze")
         self.assertIsNotNone(analyzer, "systemd-analyze is required for offline verification")
         combinations = {
@@ -174,6 +174,7 @@ class BaseExampleTests(unittest.TestCase):
             "tailnet": ("riglight.service.d/20-tailnet.conf",),
             "docker": ("riglight.service.d/30-docker-proxy.conf",),
             "all-options": tuple(OPTIONAL_DROP_INS),
+            "negative-tailnet": ("riglight.service.d/20-tailnet.conf",),
         }
         with tempfile.TemporaryDirectory() as temporary:
             for name, drop_ins in combinations.items():
@@ -196,6 +197,9 @@ class BaseExampleTests(unittest.TestCase):
                         target = stage / relative_path
                         target.parent.mkdir(exist_ok=True)
                         target.write_text((ROOT / relative_path).read_text())
+                    if name == "negative-tailnet":
+                        target = stage / "riglight.service.d/20-tailnet.conf"
+                        target.write_text(target.read_text() + "RiglightNegativeControl=yes\n")
                     result = subprocess.run(
                         [analyzer, "verify", *map(str, staged_units)],
                         text=True,
@@ -203,8 +207,13 @@ class BaseExampleTests(unittest.TestCase):
                         stderr=subprocess.PIPE,
                         check=False,
                     )
-                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertEqual(result.stdout + result.stderr, "")
+                    output = result.stdout + result.stderr
+                    if name == "negative-tailnet":
+                        self.assertTrue(result.returncode != 0 or output, output)
+                        self.assertRegex(output, r"(?i)unknown.*RiglightNegativeControl")
+                    else:
+                        self.assertEqual(result.returncode, 0, output)
+                        self.assertEqual(output, "")
 
     def test_harness_uses_no_shell_or_service_manager_control(self):
         tree = ast.parse(Path(__file__).read_text())
