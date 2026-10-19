@@ -68,6 +68,7 @@ No fields outside this allowlist are serialized.
 | `GET` | `/healthz` | `{ "status": "OK" }` process health only |
 | `GET` | `/api/v1/snapshot` | The current sample schema object |
 | `GET` | `/api/v1/events` | Server-Sent Events carrying current sample objects |
+| `GET` | `/api/v1/containers` | Optional selected-container snapshot described below |
 
 API and stream responses are same-origin, have `Cache-Control: no-store`, and
 require the configured exact `Host`. A missing `Origin` is permitted for
@@ -207,9 +208,70 @@ upstream state is UNKNOWN; finer starting/stopping/ready states are not inferred
 Other upstream fields, private URLs/diagnostics/commands/configuration, logs,
 request content and activity are not exposed or retained in the DTO.
 
-The browser keeps one EventSource for all three sources. Inventory freshness
+The browser keeps one EventSource for all enabled sources. Inventory freshness
 expires after six seconds independently of CPU/GPU events; cached timestamp
 replays cannot renew it. No model history, controls or export are provided.
 The source uses a configured literal-loopback HTTP/HTTPS base URL, normal TLS
 verification, no proxy/redirects, a two-second deadline and one-MiB body limit.
 URL configuration is CLI-only and is never accepted from a browser.
+
+## Selected Docker containers
+
+`GET /api/v1/containers` and named `containers` events share the existing SSE
+writer/connection/client limit. Existing CPU/GPU/model payloads are unchanged.
+The dashboard is opt-in with --docker and an explicit live --docker-proxy-url;
+default/demo never construct a live source. The separate filtering helper selects
+1–16 configured alias/reference pairs, accesses only fixed inspect/stats GETs,
+and returns the same allowlisted shape in LIVE mode. No browser selects targets.
+
+```json
+{
+  "schemaVersion": 1,
+  "sampledAt": "2026-01-01T00:00:05Z",
+  "mode": "DEMO",
+  "status": "AVAILABLE",
+  "reasonCode": null,
+  "ageMs": 0,
+  "containers": [{
+    "alias": "demo-service",
+    "metadata": {"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:05Z","ageMs":0,"state":"RUNNING","health":"HEALTHY","restartCount":0},
+    "cpu": {"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:05Z","ageMs":0,"percent":125},
+    "memory": {"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:05Z","ageMs":0,"usedBytes":268435456,"totalBytes":1073741824}
+  }]
+}
+```
+
+Top-level modes, statuses and reason codes match the model-overview families,
+without isTruncated. AVAILABLE requires 1–16 unique lexically sorted ASCII aliases
+([A-Za-z0-9][A-Za-z0-9_.-]{0,63}) and nonnegative safe ageMs. Other statuses have
+null ageMs and an empty array; no silent truncation or all-container discovery.
+Metadata statuses are AVAILABLE, NOT_READY, UNAVAILABLE, NOT_FOUND or UNSUPPORTED.
+AVAILABLE metadata has independent age/timestamp, state CREATED, RUNNING, PAUSED,
+RESTARTING, REMOVING, EXITED, DEAD or UNKNOWN; health STARTING, HEALTHY, UNHEALTHY,
+NOT_CONFIGURED or UNKNOWN; nullable safe nonnegative restartCount. Other metadata
+statuses have all measurements and age/timestamp null. Sensor statuses are
+AVAILABLE, NOT_READY, UNAVAILABLE or UNSUPPORTED; non-available measurements and
+age/timestamp are null. Missing/unsupported is never a fabricated zero.
+
+CPU uses successful per-container one-shot deltas: first/reset/recreated/count-
+change intervals have no percentage. 100% means one core; 0–409600% is permitted.
+RAM subtracts valid inactive-file cache, v1 total_inactive_file or v2 inactive_file,
+and reports Docker's limit rather than guaranteeing a configured quota. Byte
+counts are safe integers with 0 <= used <= total and total > 0. Coarse Docker
+health is not application readiness; restart count is the reported daemon value.
+
+Five-second collection is independent of the other sources. Overview, metadata,
+CPU and memory expire independently after 15 seconds. Proxy age plus full request
+duration and monotonic elapsed time are retained; fetching a cached response does
+not make its old data fresh. Bounded per-field timestamp identities prevent replay
+renewal and wall-clock rollback does not order freshness. Stale overview hides
+rows; stale metadata/sensors hide their values. No container history/export.
+
+No names/IDs except configured display aliases, images, labels, environment,
+commands, mounts, networks, healthcheck output, logs or controls cross the helper
+boundary. Inspect is necessarily received transiently and unknown fields discarded;
+there is no generic pass-through API. The helper uses privileged Unix-socket access
+separately from Riglight and admits trusted local processes to the projected DTO,
+not arbitrary browser origins. See [the setup boundary](docker-access.md) and
+[the exact specification](spec-docker.md). Building/testing it does not install,
+run, grant Docker access or verify compatibility with a real daemon.

@@ -3,7 +3,8 @@
 **Your AI workstation, at a glance.**
 
 Riglight is a private, read-only dashboard for Linux workstation CPU/RAM,
-optional NVIDIA GPU metrics, and optional llama-swap inventory. It provides
+optional NVIDIA GPU metrics, optional llama-swap inventory, and selected Docker
+container monitoring through a separate filtering helper. It provides
 live browser updates and an explicit synthetic demo mode. It binds to loopback
 by default; it is not a remote shell or control plane.
 
@@ -13,9 +14,14 @@ Milestone 1 covers CPU utilization and RAM used/total. Optional, read-only
 NVIDIA GPU monitoring is also implemented and must be explicitly enabled with
 `--gpu`. Read-only llama-swap inventory is enabled separately with
 `--llama-swap`; its [specification](docs/spec-models.md) and
-[implementation plan](tasks/models-plan.md) define the narrow scope. Docker,
-logs, public ingress, authentication, persistence, and service installation remain
-out of scope. See the [CPU/RAM specification](docs/spec.md),
+[implementation plan](tasks/models-plan.md) define the narrow scope. Optional
+Docker monitoring uses `--docker` with an explicit loopback `--docker-proxy-url`;
+see [helper setup](docs/docker-access.md), [Docker specification](docs/spec-docker.md)
+and [tasks](tasks/docker-plan.md). Only explicitly selected aliases, state/health,
+restart counts and CPU/RAM are exposed. The dashboard gets no daemon socket or
+raw inspect data; helper deployment/permissions are not automated. Logs, controls,
+public ingress, authentication, persistence and service installation remain out
+of scope. See the [CPU/RAM specification](docs/spec.md),
 [GPU specification](docs/spec-gpu.md), [GPU implementation plan](tasks/gpu-plan.md),
 and [GPU task list](tasks/gpu-todo.md) for scope and project state.
 [CPU/RAM verification](docs/verification.md) and
@@ -85,6 +91,15 @@ Host/Origin and requires either configured client IPs or explicit
 remains the default;
 no public listener, wildcard CORS, Tailscale policy change or service install is
 performed.
+
+For a wholly synthetic combined view:
+
+```sh
+./bin/riglight --demo --gpu --llama-swap --docker
+```
+
+This does not start the filtering helper or contact Docker. Preparing/building the helper is separate from permission to run
+it against a real daemon; follow [the access guide](docs/docker-access.md).
 
 ## Development checks
 

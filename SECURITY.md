@@ -9,8 +9,11 @@ or expose device identifiers, process information, or controls. Optional
 llama-swap inventory is enabled separately by `--llama-swap` and exposes only
 validated aliases and reported coarse states. No inference, model controls,
 logs, commands, prompts/responses, request activity or configuration is read.
-Riglight does not provide authentication, public ingress, Docker integration,
-persistence, or service installation. Do not assume a private network by itself
+Optional Docker monitoring requires a separate filtering helper and explicit
+container selection. It exposes only configured aliases, coarse state/health,
+restart counts and CPU/RAM, not raw Docker responses or a daemon socket.
+Riglight does not provide authentication, public ingress, persistence or service
+installation. Do not assume a private network by itself
 is an authorization boundary.
 
 ## Reporting a vulnerability
@@ -59,6 +62,27 @@ requirements are reported without an automatic credential or service change.
 Actual model aliases are private runtime data: never put them or upstream
 payloads in public fixtures, screenshots, logs or reports. Treat alias strings
 as untrusted text, not HTML/links/commands; no persistence or export is provided.
+
+Docker collection is disabled by default; live --docker requires an explicit
+literal-loopback --docker-proxy-url. Disabled/demo never construct its live
+source. A separate riglight-docker-proxy executable is the only component with
+separately provisioned Unix-socket access. It pins two GET operations per selected
+container, validates reference/ID binding and projects away environment, commands,
+mounts, labels, images, identities and healthcheck output. It necessarily receives
+inspect responses transiently; it must never expose/store/log their raw contents.
+A GET-only raw proxy or read-only socket mount is not an equivalent safeguard.
+Do not grant the dashboard Docker-group/socket access or automatically run the
+helper as root. No permission changes, daemon calls or helper installation are
+implied by building/testing it. See [the boundary](docs/docker-access.md).
+
+The helper is loopback-only and serves cached projected DTOs. Its Host/Origin
+checks are browser-request guards, not local caller authentication: trusted
+local processes can read selected aliases/metrics. The dashboard's admitted
+remote readers can see them too. Only explicit operator configuration selects
+containers; browsers cannot choose references, URLs, daemon paths or operations.
+Both boundaries enforce deadlines/body/header limits, generic errors, monotonic
+sample age and no persistence/export. No logs/events/control endpoints are used.
+Live daemon compatibility/deployment requires separate verification and consent.
 
 No telemetry or external frontend assets are intended. Security checks and
 package installation may contact public registries or advisory services as
