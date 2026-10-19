@@ -91,6 +91,7 @@ func (c *Collector) Collect(ctx context.Context) (containers.Sample, error) {
 	wait.Wait()
 	for index, row := range rows {
 		if row.Alias == "" {
+			c.clearBaseline(c.targets[index].Alias)
 			rows[index] = unavailableRow(c.targets[index].Alias)
 		}
 	}

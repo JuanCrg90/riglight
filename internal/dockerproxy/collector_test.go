@@ -98,6 +98,27 @@ func TestCollectorCPUAndMemoryRules(t *testing.T) {
 	}
 }
 
+func TestCollectorClearsUnstartedBaselinesWhenPollIsCanceled(t *testing.T) {
+	t.Parallel()
+	config, err := NewConfig("/tmp/fake.sock", "127.0.0.1:9123", []string{"app=service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector, err := NewCollector(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector.baselines["app"] = cpuBaseline{id: testID, total: 1, system: 1, cpus: 1}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := collector.Collect(ctx); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	if _, exists := collector.baselines["app"]; exists {
+		t.Fatal("unstarted baseline survived canceled poll")
+	}
+}
+
 func runningDaemon(stats string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/json") {
