@@ -86,6 +86,9 @@ func (s *HTTPSource) Collect(ctx context.Context) (Sample, error) {
 		if ctx.Err() != nil {
 			return Sample{}, ctx.Err()
 		}
+		if errors.Is(requestContext.Err(), context.DeadlineExceeded) {
+			return UnavailableSample(received, ModeLive, ReasonTimeout), nil
+		}
 		return UnavailableSample(received, ModeLive, ReasonInvalidResponse), nil
 	}
 	sample, err := decodeProjected(body, received, received.Sub(started))
@@ -149,8 +152,15 @@ func decodeProjected(body []byte, received time.Time, duration time.Duration) (S
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return Sample{}, errors.New("trailing response")
 	}
-	if wire.Mode != ModeLive || wire.Status != OverviewAvailable || wire.AgeMS == nil {
-		return Sample{}, errors.New("not a live available projection")
+	if wire.Mode != ModeLive || !strictUTC(wire.SampledAt) || wire.Containers == nil {
+		return Sample{}, errors.New("invalid live projection")
+	}
+	if wire.Status != OverviewAvailable {
+		if wire.AgeMS != nil || len(wire.Containers) != 0 {
+			return Sample{}, errors.New("invalid unavailable projection")
+		}
+		sample := Sample{SchemaVersion: wire.SchemaVersion, SampledAt: wire.SampledAt, Mode: wire.Mode, Status: wire.Status, ReasonCode: wire.ReasonCode, Containers: []Container{}}
+		return sample, sample.Validate()
 	}
 	completed, ok := completion(received, wire.AgeMS, duration)
 	if !ok {
@@ -172,19 +182,38 @@ func decodeProjected(body []byte, received time.Time, duration time.Duration) (S
 		}
 		rows[index] = Container{Alias: row.Alias, Metadata: metadata, CPU: cpu, Memory: memory}
 	}
-	sample := Sample{SchemaVersion: wire.SchemaVersion, SampledAt: wire.SampledAt.UTC(), Mode: wire.Mode, Status: wire.Status, ReasonCode: wire.ReasonCode, Containers: rows, completedAt: completed}
+	sample := Sample{SchemaVersion: wire.SchemaVersion, SampledAt: wire.SampledAt, Mode: wire.Mode, Status: wire.Status, ReasonCode: wire.ReasonCode, Containers: rows, completedAt: completed}
 	return sample, sample.Validate()
 }
+
+const maxDuration = time.Duration(1<<63 - 1)
+
 func completion(received time.Time, age *int64, duration time.Duration) (time.Time, bool) {
-	if age == nil {
+	maxAgeMS := int64(maxDuration) / int64(time.Millisecond)
+	if age == nil || *age < 0 || *age > maxAgeMS {
 		return time.Time{}, false
 	}
-	if *age < 0 || *age > int64(^uint64(0)>>1)/int64(time.Millisecond) {
+	if duration < 0 {
+		duration = 0
+	}
+	elapsedMS := duration.Milliseconds()
+	if duration%time.Millisecond != 0 {
+		elapsedMS++
+	}
+	if elapsedMS < 0 || *age > maxAgeMS-elapsedMS {
 		return time.Time{}, false
 	}
-	return received.Add(-time.Duration(*age)*time.Millisecond - duration), true
+	ageDuration := time.Duration(*age) * time.Millisecond
+	if duration > maxDuration-ageDuration {
+		return time.Time{}, false
+	}
+	return received.Add(-(ageDuration + duration)), true
 }
+func strictUTC(value time.Time) bool { return !value.IsZero() && value.Location() == time.UTC }
 func importMetadata(w sourceWireMetadata, received time.Time, duration time.Duration) (Metadata, bool) {
+	if w.SampledAt != nil && !strictUTC(*w.SampledAt) {
+		return Metadata{}, false
+	}
 	value := Metadata{Status: w.Status, SampledAt: utcPointer(w.SampledAt), State: w.State, Health: w.Health, RestartCount: cloneUint64(w.RestartCount)}
 	if w.Status != MetadataAvailable {
 		return value, w.SampledAt == nil && w.AgeMS == nil
@@ -194,6 +223,9 @@ func importMetadata(w sourceWireMetadata, received time.Time, duration time.Dura
 	return value, ok
 }
 func importCPU(w sourceWireCPU, received time.Time, duration time.Duration) (CPU, bool) {
+	if w.SampledAt != nil && !strictUTC(*w.SampledAt) {
+		return CPU{}, false
+	}
 	value := CPU{Status: w.Status, SampledAt: utcPointer(w.SampledAt), Percent: w.Percent}
 	if w.Status != MetricAvailable {
 		return value, w.SampledAt == nil && w.AgeMS == nil && w.Percent == nil
@@ -203,6 +235,9 @@ func importCPU(w sourceWireCPU, received time.Time, duration time.Duration) (CPU
 	return value, ok
 }
 func importMemory(w sourceWireMemory, received time.Time, duration time.Duration) (Memory, bool) {
+	if w.SampledAt != nil && !strictUTC(*w.SampledAt) {
+		return Memory{}, false
+	}
 	value := Memory{Status: w.Status, SampledAt: utcPointer(w.SampledAt), UsedBytes: cloneUint64(w.UsedBytes), TotalBytes: cloneUint64(w.TotalBytes)}
 	if w.Status != MetricAvailable {
 		return value, w.SampledAt == nil && w.AgeMS == nil && w.UsedBytes == nil && w.TotalBytes == nil
