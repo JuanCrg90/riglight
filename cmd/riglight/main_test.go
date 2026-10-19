@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -136,6 +137,38 @@ func TestParseConfigRejectsInvalidTailnetValues(t *testing.T) {
 				t.Errorf("parseConfig(%q) error = %v, want invalid arguments", arguments, err)
 			}
 		})
+	}
+}
+
+func TestRunTailnetListenerFailureDoesNotFallBack(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	err := runWithAllFactoriesAndTailnetListener(
+		context.Background(),
+		[]string{"--demo", "--tailnet", "--listen", "100.64.0.10:9090", "--host", "workstation.example.ts.net:9090", "--allow-client", "100.64.0.20"},
+		func(*metrics.Hub) (publisher, error) {
+			return nil, errors.New("live publisher should not be constructed")
+		},
+		defaultNativeGPUPoller,
+		defaultLlamaSwapSource,
+		"linux",
+		func() (tailnetInterfaceState, error) {
+			return tailnetInterfaceState{name: tailnetInterfaceName, up: true, addrs: []netip.Addr{netip.MustParseAddr("100.64.0.10")}}, nil
+		},
+		func(_ context.Context, network, address string) (net.Listener, error) {
+			called = true
+			if network != "tcp" || address != "100.64.0.10:9090" {
+				t.Errorf("listener arguments = %q, %q", network, address)
+			}
+			return nil, errors.New("bind failed")
+		},
+	)
+	if !errors.Is(err, errUnableToStart) {
+		t.Fatalf("run tailnet error = %v, want generic startup error", err)
+	}
+	if !called {
+		t.Fatal("tailnet listener was not called")
 	}
 }
 

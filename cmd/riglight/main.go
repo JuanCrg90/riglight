@@ -51,6 +51,8 @@ type publisher interface {
 
 type livePublisherFactory func(*metrics.Hub) (publisher, error)
 
+type tailnetListenerFactory func(context.Context, string, string) (net.Listener, error)
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -77,6 +79,10 @@ func runWithAllFactories(ctx context.Context, arguments []string, newLive livePu
 }
 
 func runWithAllFactoriesAndTailnetLookup(ctx context.Context, arguments []string, newLive livePublisherFactory, newNative nativeGPUPollerFactory, newLlamaSwap llamaSwapSourceFactory, goos string, lookup func() (tailnetInterfaceState, error)) error {
+	return runWithAllFactoriesAndTailnetListener(ctx, arguments, newLive, newNative, newLlamaSwap, goos, lookup, tailnetListen)
+}
+
+func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []string, newLive livePublisherFactory, newNative nativeGPUPollerFactory, newLlamaSwap llamaSwapSourceFactory, goos string, lookup func() (tailnetInterfaceState, error), newTailnetListener tailnetListenerFactory) error {
 	config, err := parseConfig(arguments)
 	if err != nil {
 		return errInvalidArguments
@@ -111,7 +117,12 @@ func runWithAllFactoriesAndTailnetLookup(ctx context.Context, arguments []string
 	if err != nil {
 		return errUnableToStart
 	}
-	listener, err := net.Listen("tcp", config.listen)
+	var listener net.Listener
+	if config.tailnet {
+		listener, err = newTailnetListener(ctx, "tcp", config.listen)
+	} else {
+		listener, err = net.Listen("tcp", config.listen)
+	}
 	if err != nil {
 		return errUnableToStart
 	}
