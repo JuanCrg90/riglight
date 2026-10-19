@@ -44,6 +44,7 @@ function validSensor(value: unknown, kind: 'cpu' | 'memory'): boolean {
 }
 
 export function parseContainerOverview(raw: string): ContainerOverview | null {
+  if (raw.length > 32_768) return null;
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return null; }
   if (!isRecord(value) || !hasKeys(value, ['schemaVersion', 'sampledAt', 'mode', 'status', 'reasonCode', 'ageMs', 'containers']) || value.schemaVersion !== 1 || !validTime(value.sampledAt) || !['DISABLED', 'DEMO', 'LIVE'].includes(value.mode as string) || !overviewStatuses.includes(value.status as ContainerStatus) || (value.reasonCode !== null && !reasons.includes(value.reasonCode as ContainerReason)) || !Array.isArray(value.containers)) return null;

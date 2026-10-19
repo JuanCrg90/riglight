@@ -24,6 +24,9 @@ describe('parseContainerOverview', () => {
     { ...base, status: 'UNAVAILABLE', reasonCode: 'QUERY_FAILED', ageMs: null, containers: [container()] },
     { ...base, status: 'AVAILABLE', containers: [{ ...container(), metadata: { ...container().metadata, health: 'READY' } }] },
   ])('rejects malformed projections', value => expect(parse(value)).toBeNull());
+  it('rejects oversized event payloads before parsing', () => {
+    expect(parseContainerOverview(`${JSON.stringify(base)}${' '.repeat(32_769)}`)).toBeNull();
+  });
   it('accepts disabled and non-available rows only with empty/null values', () => {
     expect(parse({ ...base, status: 'DISABLED', mode: 'DISABLED', reasonCode: 'DISABLED', ageMs: null, containers: [] })?.containers).toEqual([]);
     const unavailable = { ...container(), metadata: { status: 'NOT_FOUND', sampledAt: null, ageMs: null, state: null, health: null, restartCount: null }, cpu: { status: 'UNAVAILABLE', sampledAt: null, ageMs: null, percent: null }, memory: { status: 'UNSUPPORTED', sampledAt: null, ageMs: null, usedBytes: null, totalBytes: null } };
