@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { parseMetricSample, type MetricSample } from './metrics';
 import { parseGpuOverview, type GpuOverview } from './gpu';
 import { parseModelOverview, type ModelOverview } from './models';
+import { parseContainerOverview, type ContainerOverview } from './containers';
+import { containerFreshness, type ContainerExpiry, type ContainerFreshness } from './containerFreshness';
 import { modelInventoryFreshness, type ModelExpiry } from './modelFreshness';
 import { expireGpuFreshness, gpuMetricFreshness, type GpuExpiryMap, type GpuFreshness } from './gpuFreshness';
 
@@ -19,9 +21,11 @@ type View = {
   gpuFreshness: GpuFreshness;
   models: ModelOverview | null;
   modelsFresh: boolean;
+  containers: ContainerOverview | null;
+  containersFreshness: ContainerFreshness;
 };
 
-const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [], gpu: null, gpuFreshness: {}, models: null, modelsFresh: false };
+const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [], gpu: null, gpuFreshness: {}, models: null, modelsFresh: false, containers: null, containersFreshness: { overview: false, rows: {} } };
 
 function appendPoint(history: Point[], identities: string[], identity: string, point: Point): { history: Point[]; identities: string[] } {
   if (identities.includes(identity)) return { history, identities };
@@ -43,6 +47,9 @@ export function useMetrics(): View {
     let gpuFreshness: GpuFreshness = {};
     let models: ModelOverview | null = null;
     let modelsFresh = false;
+    const containerExpiries: ContainerExpiry = new Map();
+    let containers: ContainerOverview | null = null;
+    let containersFreshness: ContainerFreshness = { overview: false, rows: {} };
     let modelsExpiry = Number.NEGATIVE_INFINITY;
     let cpuExpiry = Number.NEGATIVE_INFINITY;
     let memoryExpiry = Number.NEGATIVE_INFINITY;
@@ -54,7 +61,7 @@ export function useMetrics(): View {
     let memoryHistoryIdentities: string[] = [];
     let connection: View['connection'] = 'CONNECTING';
 
-    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness, models, modelsFresh });
+    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness, models, modelsFresh, containers, containersFreshness });
     const onOpen = () => { connection = 'CONNECTED'; publish(); };
     const onError = () => { connection = 'RECONNECTING'; publish(); };
     const onSnapshot = (event: Event) => {
@@ -89,6 +96,11 @@ export function useMetrics(): View {
         modelsExpiry = Number.NEGATIVE_INFINITY;
         modelExpiries.clear();
       }
+      if (containers && containers.mode !== sample.mode) {
+        containers = null;
+        containersFreshness = { overview: false, rows: {} };
+        containerExpiries.clear();
+      }
       if (gpu && gpu.mode !== 'DISABLED' && gpu.mode !== sample.mode) {
         gpu = null;
         gpuFreshness = {};
@@ -122,6 +134,15 @@ export function useMetrics(): View {
       connection = 'CONNECTED';
       publish();
     };
+    const onContainers = (event: Event) => {
+      const overview = parseContainerOverview((event as MessageEvent<string>).data);
+      if (!overview || (current && overview.mode !== current.mode)) return;
+      const now = performance.now();
+      containersFreshness = containerFreshness(overview, containers, containerExpiries, now);
+      containers = overview;
+      connection = 'CONNECTED';
+      publish();
+    };
     const onModels = (event: Event) => {
       const overview = parseModelOverview((event as MessageEvent<string>).data);
       if (!overview || (current && overview.mode !== 'DISABLED' && overview.mode !== current.mode)) return;
@@ -136,6 +157,7 @@ export function useMetrics(): View {
     source.addEventListener('snapshot', onSnapshot);
     source.addEventListener('gpus', onGpus);
     source.addEventListener('models', onModels);
+    source.addEventListener('containers', onContainers);
     source.onopen = onOpen;
     source.onerror = onError;
     const timer = window.setInterval(() => {
@@ -147,7 +169,9 @@ export function useMetrics(): View {
       const nextMemory = memoryFresh && now < memoryExpiry;
       const nextModels = modelsFresh && now < modelsExpiry;
       const modelsChanged = nextModels !== modelsFresh;
-      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged || modelsChanged) {
+      const nextContainersFreshness = containers ? containerFreshness(containers, containers, containerExpiries, now) : containersFreshness;
+      const containersChanged = JSON.stringify(nextContainersFreshness) !== JSON.stringify(containersFreshness);
+      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged || modelsChanged || containersChanged) {
         const gapAt = new Date().toISOString();
         if (cpuFresh && !nextCPU) {
           const point = appendPoint(cpuHistory, cpuHistoryIdentities, `stale:${now}`, { at: gapAt, value: null });
@@ -162,6 +186,7 @@ export function useMetrics(): View {
         cpuFresh = nextCPU;
         memoryFresh = nextMemory;
         modelsFresh = nextModels;
+        containersFreshness = nextContainersFreshness;
         publish();
       }
     }, 100);
@@ -170,6 +195,7 @@ export function useMetrics(): View {
       source.removeEventListener('snapshot', onSnapshot);
       source.removeEventListener('gpus', onGpus);
       source.removeEventListener('models', onModels);
+      source.removeEventListener('containers', onContainers);
       source.close();
     };
   }, []);

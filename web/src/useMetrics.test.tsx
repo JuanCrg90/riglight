@@ -68,6 +68,25 @@ describe('useMetrics', () => {
     expect(result.current.gpuFreshness[0]?.utilization).toBe(false);
   });
 
+  it('subscribes to named container events on the same source and expires freshness independently', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result, unmount } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    const sampledAt = '2026-01-01T00:00:00Z';
+    const overview = { schemaVersion: 1, sampledAt, mode: 'DEMO', status: 'AVAILABLE', reasonCode: null, ageMs: 0, containers: [{ alias: 'demo-service', metadata: { status: 'AVAILABLE', sampledAt, ageMs: 0, state: 'RUNNING', health: 'HEALTHY', restartCount: 0 }, cpu: { status: 'AVAILABLE', sampledAt, ageMs: 0, percent: 125 }, memory: { status: 'AVAILABLE', sampledAt, ageMs: 0, usedBytes: 10, totalBytes: 20 } }] };
+    act(() => source.send(overview, 'containers'));
+    expect(result.current.containersFreshness.overview).toBe(true);
+    expect(result.current.containersFreshness.rows['demo-service']?.cpu).toBe(true);
+    act(() => source.send(frame(), 'snapshot'));
+    expect(FakeEventSource.instances).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(15_000); });
+    expect(result.current.containersFreshness.overview).toBe(false);
+    unmount();
+    expect(source.listeners.has('containers')).toBe(false);
+    expect(source.close).toHaveBeenCalledOnce();
+  });
+
   it('subscribes to named model events on the same source and expires inventory independently', () => {
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);
