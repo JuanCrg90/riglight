@@ -10,9 +10,14 @@
   logs, inference, commands/configuration, request activity or model controls.
   Use only the fixed GET /v1/models upstream API; never /running or general SSE.
 - The owner approved selected-container Docker monitoring through a filtering
-  helper; follow docs/spec-docker.md and tasks/docker-plan.md. Implement/test and
-  prepare instructions only: no actual daemon calls, helper deployment, Docker
-  permission/configuration changes, or restart of the current dashboard.
+  helper; follow docs/spec-docker.md and tasks/docker-plan.md. Live deployment
+  was separately approved and verified with existing access and private selection.
+  Do not change its running helper/dashboard or daemon permissions/configuration
+  without a new explicit request.
+- Owner approved deployment examples/documentation only; follow
+  docs/spec-deployment.md and tasks/deployment-plan.md. No service installation,
+  enablement, daemon-reload, account/group/permission changes, reboot or interruption
+  of current processes is authorized by that preparation task.
 - Public ingress, authentication, persistence, logs, controls and service
   installation remain separate unapproved increments.
 - Do not stop/restart the owner's running server. Verify new builds on separate
