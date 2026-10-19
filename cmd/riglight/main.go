@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"runtime"
@@ -32,12 +33,16 @@ var (
 )
 
 type config struct {
-	listen       string
-	demo         bool
-	dev          bool
-	gpu          bool
-	llamaSwap    bool
-	llamaSwapURL string
+	listen         string
+	demo           bool
+	dev            bool
+	gpu            bool
+	llamaSwap      bool
+	llamaSwapURL   string
+	tailnet        bool
+	host           string
+	listenIP       netip.Addr
+	allowedClients []netip.Addr
 }
 
 type publisher interface {
@@ -68,12 +73,22 @@ func runWithFactories(ctx context.Context, arguments []string, newLive livePubli
 }
 
 func runWithAllFactories(ctx context.Context, arguments []string, newLive livePublisherFactory, newNative nativeGPUPollerFactory, newLlamaSwap llamaSwapSourceFactory, goos string) error {
+	return runWithAllFactoriesAndTailnetLookup(ctx, arguments, newLive, newNative, newLlamaSwap, goos, lookupTailnetInterface)
+}
+
+func runWithAllFactoriesAndTailnetLookup(ctx context.Context, arguments []string, newLive livePublisherFactory, newNative nativeGPUPollerFactory, newLlamaSwap llamaSwapSourceFactory, goos string, lookup func() (tailnetInterfaceState, error)) error {
 	config, err := parseConfig(arguments)
 	if err != nil {
 		return errInvalidArguments
 	}
-	if !config.demo && goos != "linux" {
+	if (!config.demo || config.tailnet) && goos != "linux" {
 		return errUnableToStart
+	}
+	if config.tailnet {
+		state, err := lookup()
+		if err != nil || !tailnetInterfaceHasAddress(config.listenIP, state) {
+			return errUnableToStart
+		}
 	}
 
 	now := time.Now()
@@ -110,15 +125,18 @@ func runWithAllFactories(ctx context.Context, arguments []string, newLive livePu
 		return errUnableToStart
 	}
 	origins := []string(nil)
-	if config.dev {
+	allowedHost := config.listen
+	if config.tailnet {
+		allowedHost = config.host
+	} else if config.dev {
 		origins = []string{devOrigin}
 	}
 	handler, err := server.New(server.Config{
 		Hub:               hub,
 		GPUHub:            gpuHub,
 		ModelsHub:         llamaSwapHub,
-		AllowedHost:       config.listen,
-		AllowedOrigin:     "http://" + config.listen,
+		AllowedHost:       allowedHost,
+		AllowedOrigin:     "http://" + allowedHost,
 		AdditionalOrigins: origins,
 		Context:           application,
 		Assets:            web.Assets,
@@ -216,17 +234,55 @@ func parseConfig(arguments []string) (config, error) {
 	gpu := flags.Bool("gpu", false, "")
 	llamaSwap := flags.Bool("llama-swap", false, "")
 	llamaSwapURL := flags.String("llama-swap-url", defaultLlamaSwapURL, "")
+	tailnet := flags.Bool("tailnet", false, "")
+	host := flags.String("host", "", "")
+	var allowedClientValues stringValues
+	flags.Var(&allowedClientValues, "allow-client", "")
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
-	canonicalListen, ok := canonicalLoopbackListen(*listen)
-	if !ok {
+	listenSet, hostSet, allowClientSet, urlSet := false, false, false, false
+	flags.Visit(func(flag *flag.Flag) {
+		switch flag.Name {
+		case "listen":
+			listenSet = true
+		case "host":
+			hostSet = true
+		case "allow-client":
+			allowClientSet = true
+		case "llama-swap-url":
+			urlSet = true
+		}
+	})
+	if (*tailnet && (*dev || !listenSet || !hostSet || !allowClientSet)) || (!*tailnet && (hostSet || allowClientSet)) {
 		return config{}, errInvalidArguments
 	}
-	urlSet := false
-	flags.Visit(func(flag *flag.Flag) {
-		urlSet = urlSet || flag.Name == "llama-swap-url"
-	})
+	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, tailnet: *tailnet}
+	if *tailnet {
+		canonicalListen, listenIP, ok := canonicalTailnetListen(*listen)
+		if !ok {
+			return config{}, errInvalidArguments
+		}
+		_, port, _ := net.SplitHostPort(canonicalListen)
+		canonicalHost, ok := canonicalTailnetHost(*host, port)
+		if !ok {
+			return config{}, errInvalidArguments
+		}
+		for _, value := range allowedClientValues {
+			client, ok := canonicalTailnetAddr(value)
+			if !ok {
+				return config{}, errInvalidArguments
+			}
+			parsed.allowedClients = append(parsed.allowedClients, client)
+		}
+		parsed.listen, parsed.listenIP, parsed.host = canonicalListen, listenIP, canonicalHost
+	} else {
+		canonicalListen, ok := canonicalLoopbackListen(*listen)
+		if !ok {
+			return config{}, errInvalidArguments
+		}
+		parsed.listen = canonicalListen
+	}
 	if urlSet && !*llamaSwap {
 		return config{}, errInvalidArguments
 	}
@@ -235,7 +291,7 @@ func parseConfig(arguments []string) (config, error) {
 			return config{}, errInvalidArguments
 		}
 	}
-	return config{listen: canonicalListen, demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL}, nil
+	return parsed, nil
 }
 
 func canonicalLoopbackListen(address string) (string, bool) {
