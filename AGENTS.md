@@ -29,7 +29,10 @@
   metrics/logs, prompts/responses, process arguments, or environment contents.
 - Git author identity is the owner's explicitly selected existing identity;
   do not change it or imply that Git authorship has been anonymized.
-- Bind loopback only; no firewall, VPN, system-service, or Docker changes.
+- Default bind stays loopback-only. Owner approved explicit direct tailnet access
+  in `docs/spec-tailnet.md`: assigned tailscale0 IP only, exact MagicDNS Host/
+  Origin and explicit client-IP allowlist. Actual addresses stay private.
+  No wildcard/public/LAN binding, firewall/VPN policy, service, or Docker changes.
 - No telemetry, third-party frontend assets, or runtime analytics.
 - Dependency scripts stay blocked unless individually inspected and approved.
 - Preserve unrelated changes. Use Trash for deletions; no destructive Git resets.
