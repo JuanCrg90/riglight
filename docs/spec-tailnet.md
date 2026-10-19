@@ -10,8 +10,10 @@ Existing Tailscale Serve routes must remain untouched.
 - Default --listen stays loopback-only; preserve all existing flags/behavior.
 - New --tailnet enables a separate strict listen policy. Require an explicit
   --listen literal Tailscale IP:port, --host MagicDNS-name.ts.net:matching-port,
-  and at least one --allow-client IP (repeatable). Reject these extra flags
-  without --tailnet, and reject --dev with --tailnet.
+  and exactly one admission mode: at least one --allow-client IP (repeatable),
+  or explicit --allow-all-tailnet. The owner approved all-device access after
+  confirming the restricted mode from their Mac. Reject mixed admission modes,
+  either mode without --tailnet, and --dev with --tailnet.
 - Reject wildcard, LAN/public/non-Tailscale and DNS listen addresses. Permitted
   address ranges: 100.64.0.0/10 and fd7a:115c:a1e0::/48, normalized/unmapped.
 - Before binding, require the selected IP actually belongs to an up Linux
@@ -27,6 +29,10 @@ Existing Tailscale Serve routes must remain untouched.
   whitespace, trailing dot, IP alias, wildcard, or implicit forwarded Host.
 - --allow-client accepts exact IPv4/IPv6 Tailscale IPs only, not CIDRs, DNS names,
   wildcards, loopback, LAN or public addresses. Empty lists fail closed.
+- --allow-all-tailnet admits valid IPv4/IPv6 Tailscale source addresses only,
+  through the same interface-restricted listener and existing tailnet access
+  rules. It may include other members' devices if the tailnet permits them;
+  it does not determine personal ownership or alter ACLs. It is never implicit.
 
 ## HTTP boundary
 
@@ -35,7 +41,10 @@ Existing Tailscale Serve routes must remain untouched.
 - Add optional Config.AllowedClients []netip.Addr (or equivalently typed field).
   Nil preserves current library behavior; nonnil empty/invalid lists are errors.
   Server configuration independently validates Tailscale range membership, not
-  only the CLI. Reject duplicate Host headers at the HTTP parsing boundary.
+  only the CLI. Optional Config.AllowAllTailnet is mutually exclusive with any
+  nonnil AllowedClients list. All-device mode still parses RemoteAddr and rejects
+  invalid/loopback/LAN/public/non-Tailscale sources, not just mismatched headers.
+  Reject duplicate Host headers at the HTTP parsing boundary.
 - When configured, parse the TCP request.RemoteAddr with netip, normalize/unmap
   and require exact client membership before serving anything. Never trust
   X-Forwarded-For, Forwarded, Tailscale identity headers, or browser inputs.

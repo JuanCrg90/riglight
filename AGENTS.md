@@ -31,7 +31,9 @@
   do not change it or imply that Git authorship has been anonymized.
 - Default bind stays loopback-only. Owner approved explicit direct tailnet access
   in `docs/spec-tailnet.md`: assigned tailscale0 IP only, exact MagicDNS Host/
-  Origin and explicit client-IP allowlist. Actual addresses stay private.
+  Origin and explicit client-IP allowlist or explicit --allow-all-tailnet mode.
+  The owner approved all-device access subject to existing tailnet rules.
+  Actual addresses stay private.
   No wildcard/public/LAN binding, firewall/VPN policy, service, or Docker changes.
 - No telemetry, third-party frontend assets, or runtime analytics.
 - Dependency scripts stay blocked unless individually inspected and approved.
