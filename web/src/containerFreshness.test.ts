@@ -52,6 +52,21 @@ describe('container freshness', () => {
     expect([...expiry.keys()].some(key => key.includes('service'))).toBe(false);
     expect(containerFreshness(first, selectedAgain, expiry, 3_000).rows.service?.cpu).toBe(true);
   });
+  it.each(['NOT_READY', 'UNAVAILABLE'] as const)('poisons a %s overview timestamp against an available replay', status => {
+    const expiry: ContainerExpiry = new Map();
+    const notAvailable = { ...available(), status, reasonCode: status === 'UNAVAILABLE' ? 'QUERY_FAILED' as const : null, ageMs: null, containers: [] };
+    expect(containerFreshness(notAvailable, null, expiry, 500).overview).toBe(false);
+    expect(containerFreshness(available(at, 0), notAvailable, expiry, 1_000).overview).toBe(false);
+  });
+  it('preserves available replay protection through a different non-available timestamp', () => {
+    const expiry: ContainerExpiry = new Map();
+    const a = available(at);
+    containerFreshness(a, null, expiry, 0);
+    const unavailableB = { ...a, sampledAt: '2026-01-01T00:00:01Z', status: 'UNAVAILABLE' as const, reasonCode: 'QUERY_FAILED' as const, ageMs: null, containers: [] };
+    containerFreshness(unavailableB, a, expiry, 1_000);
+    expect(containerFreshness(a, unavailableB, expiry, 5_000).overview).toBe(true);
+    expect(containerFreshness(a, unavailableB, expiry, 15_001).overview).toBe(false);
+  });
   it('accepts an unseen earlier server timestamp after rollback and resets identities on mode change', () => {
     const expiry: ContainerExpiry = new Map(); const later = available('2026-01-02T00:00:00Z');
     containerFreshness(later, null, expiry, 0);

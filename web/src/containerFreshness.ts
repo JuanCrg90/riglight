@@ -15,6 +15,12 @@ function bankFor(expiries: ContainerExpiry, key: string): ExpiryBank {
   }
   return bank;
 }
+function poison(bank: ExpiryBank, identity: string): void {
+  bank.identities.delete(identity);
+  bank.identities.set(identity, Number.NEGATIVE_INFINITY);
+  while (bank.identities.size > IDENTITY_LIMIT) bank.identities.delete(bank.identities.keys().next().value!);
+  bank.activeExpiry = Number.NEGATIVE_INFINITY;
+}
 function update(bank: ExpiryBank, identity: string, ageMs: number, now: number): boolean {
   const reported = now + Math.max(0, STALE_AFTER_MS - ageMs);
   const known = bank.identities.get(identity);
@@ -33,7 +39,10 @@ function updateSensor(expiries: ContainerExpiry, mode: string, alias: string, se
 
 export function containerFreshness(current: ContainerOverview, previous: ContainerOverview | null, expiries: ContainerExpiry, now: number): ContainerFreshness {
   if (previous && previous.mode !== current.mode) expiries.clear();
-  if (current.status !== 'AVAILABLE') return { overview: false, rows: {} };
+  if (current.status !== 'AVAILABLE') {
+    poison(bankFor(expiries, 'overview'), JSON.stringify([current.mode, current.sampledAt]));
+    return { overview: false, rows: {} };
+  }
 
   const aliases = new Set(current.containers.map(row => row.alias));
   for (const key of expiries.keys()) {
