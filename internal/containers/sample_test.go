@@ -62,6 +62,30 @@ func TestSampleRejectsUnsafeOrInconsistentValues(t *testing.T) {
 	}
 }
 
+func TestNonAvailableComponentsRejectMeasurementsOrMetadataValues(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, time.January, 1, 0, 0, 5, 0, time.UTC)
+	sample, err := NewAvailableSample(at, at, ModeLive, []Container{demoContainer(at, "app")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*Container){
+		func(row *Container) { row.CPU = CPU{Status: MetricUnavailable, Percent: floatPointer(1)} },
+		func(row *Container) {
+			row.Memory = Memory{Status: MetricUnsupported, UsedBytes: uint64Pointer(1), TotalBytes: uint64Pointer(2)}
+		},
+		func(row *Container) {
+			row.Metadata = Metadata{Status: MetadataUnavailable, State: StateRunning, Health: HealthHealthy, RestartCount: uint64Pointer(1)}
+		},
+	} {
+		copy := cloneSample(sample)
+		mutate(&copy.Containers[0])
+		if err := copy.Validate(); err == nil {
+			t.Fatal("accepted non-available component values")
+		}
+	}
+}
+
 func TestDisabledAndUnavailableSamplesHaveNullAgeAndNoRows(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, time.January, 1, 0, 0, 5, 0, time.UTC)

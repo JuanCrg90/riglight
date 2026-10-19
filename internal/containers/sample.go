@@ -208,6 +208,9 @@ func (c Container) validate() error {
 	if available != (c.Metadata.SampledAt != nil && !c.Metadata.SampledAt.IsZero() && !c.Metadata.completedAt.IsZero()) {
 		return errors.New("invalid metadata age")
 	}
+	if !available && (c.Metadata.RestartCount != nil || c.Metadata.State != StateUnknown || c.Metadata.Health != HealthUnknown) {
+		return errors.New("invalid unavailable metadata values")
+	}
 	if c.Metadata.RestartCount != nil && *c.Metadata.RestartCount > maxSafeJSONInteger {
 		return errors.New("unsafe restart count")
 	}
@@ -223,7 +226,8 @@ func (c Container) validate() error {
 	return nil
 }
 func (c CPU) validate() error {
-	if !validMetricStatus(c.Status) || (c.Status == MetricAvailable) != (c.SampledAt != nil && !c.SampledAt.IsZero() && !c.completedAt.IsZero() && c.Percent != nil) {
+	available := c.Status == MetricAvailable
+	if !validMetricStatus(c.Status) || available != (c.SampledAt != nil && !c.SampledAt.IsZero() && !c.completedAt.IsZero() && c.Percent != nil) || (!available && (c.SampledAt != nil || !c.completedAt.IsZero() || c.Percent != nil)) {
 		return errors.New("invalid cpu")
 	}
 	if c.Percent != nil && (math.IsNaN(*c.Percent) || math.IsInf(*c.Percent, 0) || *c.Percent < 0 || *c.Percent > MaxCPUPercent) {
@@ -232,7 +236,8 @@ func (c CPU) validate() error {
 	return nil
 }
 func (m Memory) validate() error {
-	if !validMetricStatus(m.Status) || (m.UsedBytes == nil) != (m.TotalBytes == nil) || (m.Status == MetricAvailable) != (m.SampledAt != nil && !m.SampledAt.IsZero() && !m.completedAt.IsZero() && m.UsedBytes != nil) {
+	available := m.Status == MetricAvailable
+	if !validMetricStatus(m.Status) || (m.UsedBytes == nil) != (m.TotalBytes == nil) || available != (m.SampledAt != nil && !m.SampledAt.IsZero() && !m.completedAt.IsZero() && m.UsedBytes != nil) || (!available && (m.SampledAt != nil || !m.completedAt.IsZero() || m.UsedBytes != nil || m.TotalBytes != nil)) {
 		return errors.New("invalid memory")
 	}
 	if m.UsedBytes != nil && (*m.TotalBytes == 0 || *m.TotalBytes > maxSafeJSONInteger || *m.UsedBytes > *m.TotalBytes) {
