@@ -3,7 +3,7 @@ import { parseMetricSample, type MetricSample } from './metrics';
 import { parseGpuOverview, type GpuOverview } from './gpu';
 import { parseModelOverview, type ModelOverview } from './models';
 import { parseContainerOverview, type ContainerOverview } from './containers';
-import { containerFreshness, type ContainerExpiry, type ContainerFreshness } from './containerFreshness';
+import { containerFreshness, expireContainerFreshness, type ContainerExpiry, type ContainerFreshness } from './containerFreshness';
 import { modelInventoryFreshness, type ModelExpiry } from './modelFreshness';
 import { expireGpuFreshness, gpuMetricFreshness, type GpuExpiryMap, type GpuFreshness } from './gpuFreshness';
 
@@ -96,7 +96,7 @@ export function useMetrics(): View {
         modelsExpiry = Number.NEGATIVE_INFINITY;
         modelExpiries.clear();
       }
-      if (containers && containers.mode !== sample.mode) {
+      if (containers && containers.mode !== 'DISABLED' && containers.mode !== sample.mode) {
         containers = null;
         containersFreshness = { overview: false, rows: {} };
         containerExpiries.clear();
@@ -136,7 +136,7 @@ export function useMetrics(): View {
     };
     const onContainers = (event: Event) => {
       const overview = parseContainerOverview((event as MessageEvent<string>).data);
-      if (!overview || (current && overview.mode !== current.mode)) return;
+      if (!overview || (current && overview.mode !== 'DISABLED' && overview.mode !== current.mode)) return;
       const now = performance.now();
       containersFreshness = containerFreshness(overview, containers, containerExpiries, now);
       containers = overview;
@@ -169,7 +169,7 @@ export function useMetrics(): View {
       const nextMemory = memoryFresh && now < memoryExpiry;
       const nextModels = modelsFresh && now < modelsExpiry;
       const modelsChanged = nextModels !== modelsFresh;
-      const nextContainersFreshness = containers ? containerFreshness(containers, containers, containerExpiries, now) : containersFreshness;
+      const nextContainersFreshness = expireContainerFreshness(containersFreshness, containerExpiries, now);
       const containersChanged = JSON.stringify(nextContainersFreshness) !== JSON.stringify(containersFreshness);
       if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged || modelsChanged || containersChanged) {
         const gapAt = new Date().toISOString();

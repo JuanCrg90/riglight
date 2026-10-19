@@ -68,6 +68,18 @@ describe('useMetrics', () => {
     expect(result.current.gpuFreshness[0]?.utilization).toBe(false);
   });
 
+  it('accepts disabled container events independently of CPU mode and preserves them on snapshots', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(frame(), 'snapshot'));
+    const disabled = { schemaVersion: 1, sampledAt: '2026-01-01T00:00:00Z', mode: 'DISABLED', status: 'DISABLED', reasonCode: 'DISABLED', ageMs: null, containers: [] };
+    act(() => source.send(disabled, 'containers'));
+    expect(result.current.containers?.status).toBe('DISABLED');
+    act(() => source.send(frame('2026-01-01T00:00:01Z'), 'snapshot'));
+    expect(result.current.containers?.status).toBe('DISABLED');
+  });
+
   it('subscribes to named container events on the same source and expires freshness independently', () => {
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);

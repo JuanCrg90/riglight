@@ -20,6 +20,13 @@ describe('ContainerSection', () => {
     expect(screen.getByText('Cache-adjusted memory')).toBeVisible();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
+  it.each(['NOT_FOUND', 'NOT_READY', 'UNAVAILABLE', 'UNSUPPORTED'] as const)('shows metadata %s instead of calling it stale', status => {
+    const row = { ...overview.containers[0]!, metadata: { status, sampledAt: null, ageMs: null, state: null, health: null, restartCount: null } };
+    render(<ContainerSection overview={{ ...overview, containers: [row] }} freshness={{ overview: true, rows: { 'demo-service': { metadata: false, cpu: true, memory: true } } }} />);
+    expect(screen.getAllByText(status.replaceAll('_', ' '))).toHaveLength(2);
+    expect(screen.queryByText('Stale')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Restarts:/)).not.toBeInTheDocument();
+  });
   it('hides all rows when the overview expires', () => {
     render(<ContainerSection overview={overview} freshness={{ overview: false, rows: { 'demo-service': { metadata: true, cpu: true, memory: true } } }} />);
     expect(screen.getByText('Container overview is stale. Waiting for a new sample.')).toBeVisible();

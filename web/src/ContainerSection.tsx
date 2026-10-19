@@ -18,7 +18,7 @@ export function ContainerSection({ overview, freshness }: { overview: ContainerO
   </section>;
 }
 function ContainerCard({ row, fresh }: { row: ContainerRow; fresh: ContainerFreshness['rows'][string] | undefined }) {
-  const metadata = !fresh?.metadata ? 'Stale' : row.metadata.status === 'AVAILABLE' ? null : row.metadata.status.replaceAll('_', ' ');
+  const metadata = row.metadata.status !== 'AVAILABLE' ? row.metadata.status.replaceAll('_', ' ') : !fresh?.metadata ? 'Stale' : null;
   const sensorState = (status: string, isFresh: boolean | undefined) => !isFresh && status === 'AVAILABLE' ? 'Stale' : status.replaceAll('_', ' ');
   return <li className="container-card">
     <h3>{row.alias}</h3>
