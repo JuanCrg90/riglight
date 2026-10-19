@@ -101,6 +101,15 @@ For a wholly synthetic combined view:
 This does not start the filtering helper or contact Docker. Preparing/building the helper is separate from permission to run
 it against a real daemon; follow [the access guide](docs/docker-access.md).
 
+## Deployment preparation
+
+Example systemd units and private configuration templates are documented in
+[the deployment guide](docs/deployment.md). They use separate unprivileged
+identities for the dashboard and Docker helper, conservative loopback defaults,
+and explicit optional GPU/tailnet/Docker profiles. Preparing/verifying examples
+does not install or enable services, grant access, or interrupt running instances.
+A separately approved rollout and real sandbox/boot verification are required.
+
 ## Development checks
 
 Available frontend scripts include `test` (one-shot Vitest), `lint`,
