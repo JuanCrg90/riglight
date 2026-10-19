@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"riglight/internal/containers"
 	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
 )
@@ -59,6 +60,20 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 	if unsubscribeModels != nil {
 		defer unsubscribeModels()
 	}
+	var containerUpdates <-chan containers.Sample
+	var unsubscribeContainers func()
+	if s.containersHub != nil {
+		containerSubscription, subscribeErr := s.containersHub.Subscribe()
+		if subscribeErr != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+			return
+		}
+		containerUpdates = containerSubscription.Updates()
+		unsubscribeContainers = containerSubscription.Unsubscribe
+	}
+	if unsubscribeContainers != nil {
+		defer unsubscribeContainers()
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	streamContext, cancel := context.WithCancel(request.Context())
@@ -90,6 +105,16 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	if containerUpdates != nil {
+		select {
+		case initialContainers := <-containerUpdates:
+			if s.writeEvent(w, "containers", initialContainers) != nil {
+				return
+			}
+		case <-streamContext.Done():
+			return
+		}
+	}
 	for {
 		select {
 		case sample := <-cpuSubscription.Updates():
@@ -102,6 +127,10 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 			}
 		case sample := <-modelUpdates:
 			if s.writeEvent(w, "models", sample) != nil {
+				return
+			}
+		case sample := <-containerUpdates:
+			if s.writeEvent(w, "containers", sample) != nil {
 				return
 			}
 		case <-streamContext.Done():

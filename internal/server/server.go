@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"time"
 
+	"riglight/internal/containers"
 	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
 	"riglight/internal/metrics"
@@ -21,6 +22,7 @@ type Config struct {
 	Hub               *metrics.Hub
 	GPUHub            *gpu.Hub
 	ModelsHub         *llamaswap.Hub
+	ContainersHub     *containers.Hub
 	AllowedHost       string
 	AllowedOrigin     string
 	AdditionalOrigins []string
@@ -36,6 +38,7 @@ type Server struct {
 	hub             *metrics.Hub
 	gpuHub          *gpu.Hub
 	modelsHub       *llamaswap.Hub
+	containersHub   *containers.Hub
 	allowedHost     string
 	allowedOrigins  map[string]struct{}
 	allowedClients  map[netip.Addr]struct{}
@@ -82,6 +85,7 @@ func New(config Config) (*Server, error) {
 		hub:             config.Hub,
 		gpuHub:          config.GPUHub,
 		modelsHub:       config.ModelsHub,
+		containersHub:   config.ContainersHub,
 		allowedHost:     config.AllowedHost,
 		allowedOrigins:  allowedOrigins,
 		allowedClients:  allowedClients,
@@ -123,6 +127,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		s.gpus(w)
+	case "/api/v1/containers":
+		if s.containersHub == nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+			return
+		}
+		if !requireGet(w, request) || !validRequestInput(w, request) {
+			return
+		}
+		s.containers(w)
 	case "/api/v1/models":
 		if s.modelsHub == nil {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
@@ -169,6 +182,15 @@ func (s *Server) snapshot(w http.ResponseWriter) {
 
 func (s *Server) gpus(w http.ResponseWriter) {
 	body, err := s.gpuHub.Latest().MarshalAt(s.now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+func (s *Server) containers(w http.ResponseWriter) {
+	body, err := s.containersHub.Latest().MarshalAt(s.now())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
 		return

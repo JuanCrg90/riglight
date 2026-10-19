@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"riglight/internal/containers"
 	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
 	"riglight/internal/metrics"
@@ -39,6 +40,8 @@ type config struct {
 	gpu             bool
 	llamaSwap       bool
 	llamaSwapURL    string
+	docker          bool
+	dockerProxyURL  string
 	tailnet         bool
 	host            string
 	listenIP        netip.Addr
@@ -114,6 +117,11 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		return errUnableToStart
 	}
 	defer llamaSwapHub.Close()
+	containerHub, err := containers.NewHub(initialContainerSample(now, config))
+	if err != nil {
+		return errUnableToStart
+	}
+	defer containerHub.Close()
 	publisher, err := selectPublisher(config.demo, hub, newLive)
 	if err != nil {
 		return errUnableToStart
@@ -136,6 +144,12 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		_ = listener.Close()
 		return errUnableToStart
 	}
+	containerWorker, err := selectContainerWorker(containerHub, config, defaultContainerSource)
+	if err != nil {
+		cancelApplication()
+		_ = listener.Close()
+		return errUnableToStart
+	}
 	origins := []string(nil)
 	allowedHost := config.listen
 	if config.tailnet {
@@ -147,6 +161,7 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		Hub:               hub,
 		GPUHub:            gpuHub,
 		ModelsHub:         llamaSwapHub,
+		ContainersHub:     containerHub,
 		AllowedHost:       allowedHost,
 		AllowedOrigin:     "http://" + allowedHost,
 		AdditionalOrigins: origins,
@@ -166,7 +181,9 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		IdleTimeout:       time.Minute,
 		MaxHeaderBytes:    8 << 10,
 	}
-	defer func() { shutdownApplication(cancelApplication, httpServer, gpuWorker, llamaSwapWorker) }()
+	defer func() {
+		shutdownApplication(cancelApplication, httpServer, gpuWorker, llamaSwapWorker, containerWorker)
+	}()
 	serveError := make(chan error, 1)
 	go func() { serveError <- httpServer.Serve(listener) }()
 	if gpuWorker != nil {
@@ -174,6 +191,9 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 	}
 	if llamaSwapWorker != nil {
 		llamaSwapWorker.Start(application)
+	}
+	if containerWorker != nil {
+		containerWorker.Start(application)
 	}
 
 	if err := publisher.Publish(application, time.Now()); err != nil {
@@ -199,7 +219,7 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 	}
 }
 
-func shutdownApplication(cancelApplication context.CancelFunc, server *http.Server, gpuWorker *gpuWorker, llamaSwapWorker *llamaSwapWorker) {
+func shutdownApplication(cancelApplication context.CancelFunc, server *http.Server, gpuWorker *gpuWorker, llamaSwapWorker *llamaSwapWorker, containerWorker *containerWorker) {
 	// One deadline covers HTTP stream cancellation, HTTP shutdown and normal GPU
 	// cleanup. A blocked native call is left loaded rather than racing unload.
 	cancelApplication()
@@ -211,6 +231,9 @@ func shutdownApplication(cancelApplication context.CancelFunc, server *http.Serv
 	}
 	if llamaSwapWorker != nil {
 		llamaSwapWorker.Wait(ctx)
+	}
+	if containerWorker != nil {
+		containerWorker.Wait(ctx)
 	}
 }
 
@@ -248,6 +271,8 @@ func parseConfig(arguments []string) (config, error) {
 	gpu := flags.Bool("gpu", false, "")
 	llamaSwap := flags.Bool("llama-swap", false, "")
 	llamaSwapURL := flags.String("llama-swap-url", defaultLlamaSwapURL, "")
+	docker := flags.Bool("docker", false, "")
+	dockerProxyURL := flags.String("docker-proxy-url", "", "")
 	tailnet := flags.Bool("tailnet", false, "")
 	host := flags.String("host", "", "")
 	allowAllTailnet := flags.Bool("allow-all-tailnet", false, "")
@@ -256,7 +281,7 @@ func parseConfig(arguments []string) (config, error) {
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
-	listenSet, hostSet, allowClientSet, allowAllTailnetSet, urlSet := false, false, false, false, false
+	listenSet, hostSet, allowClientSet, allowAllTailnetSet, urlSet, dockerURLSet := false, false, false, false, false, false
 	flags.Visit(func(flag *flag.Flag) {
 		switch flag.Name {
 		case "listen":
@@ -269,12 +294,14 @@ func parseConfig(arguments []string) (config, error) {
 			allowAllTailnetSet = true
 		case "llama-swap-url":
 			urlSet = true
+		case "docker-proxy-url":
+			dockerURLSet = true
 		}
 	})
 	if (*tailnet && (*dev || !listenSet || !hostSet || (*allowAllTailnet == allowClientSet))) || (!*tailnet && (hostSet || allowClientSet || allowAllTailnetSet)) {
 		return config{}, errInvalidArguments
 	}
-	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, tailnet: *tailnet, allowAllTailnet: *allowAllTailnet}
+	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, docker: *docker, dockerProxyURL: *dockerProxyURL, tailnet: *tailnet, allowAllTailnet: *allowAllTailnet}
 	if *tailnet {
 		canonicalListen, listenIP, ok := canonicalTailnetListen(*listen)
 		if !ok {
@@ -305,6 +332,17 @@ func parseConfig(arguments []string) (config, error) {
 	}
 	if *llamaSwap && !*demo {
 		if _, err := llamaswap.CanonicalURL(*llamaSwapURL); err != nil {
+			return config{}, errInvalidArguments
+		}
+	}
+	if dockerURLSet && !*docker {
+		return config{}, errInvalidArguments
+	}
+	if *docker && !*demo {
+		if !dockerURLSet {
+			return config{}, errInvalidArguments
+		}
+		if _, err := containers.CanonicalURL(*dockerProxyURL); err != nil {
 			return config{}, errInvalidArguments
 		}
 	}
