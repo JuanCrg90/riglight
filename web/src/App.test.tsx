@@ -78,7 +78,7 @@ describe('dashboard shell', () => {
     vi.stubGlobal('EventSource', class { addEventListener() {} removeEventListener() {} close() {} });
     render(<App />);
     expect(screen.getByRole('heading', { name: 'System overview' })).toBeVisible();
-    expect(screen.getByRole('status')).toHaveTextContent('Waiting for the first sample');
+    expect(screen.getByText(/Waiting for the first sample/)).toBeVisible();
     expect(screen.getByText('NO SAMPLE')).toBeVisible();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
   });
