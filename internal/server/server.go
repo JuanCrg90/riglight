@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"riglight/internal/gpu"
@@ -23,6 +24,7 @@ type Config struct {
 	AllowedHost       string
 	AllowedOrigin     string
 	AdditionalOrigins []string
+	AllowedClients    []netip.Addr
 	Now               func() time.Time
 	Context           context.Context
 	Assets            fs.FS
@@ -35,6 +37,7 @@ type Server struct {
 	modelsHub      *llamaswap.Hub
 	allowedHost    string
 	allowedOrigins map[string]struct{}
+	allowedClients map[netip.Addr]struct{}
 	now            func() time.Time
 	context        context.Context
 	assets         fs.FS
@@ -51,6 +54,10 @@ func New(config Config) (*Server, error) {
 			return nil, errInvalidConfig
 		}
 		allowedOrigins[origin] = struct{}{}
+	}
+	allowedClients, err := validateAllowedClients(config.AllowedClients)
+	if err != nil {
+		return nil, errInvalidConfig
 	}
 	if config.Now == nil {
 		config.Now = time.Now
@@ -72,6 +79,7 @@ func New(config Config) (*Server, error) {
 		modelsHub:      config.ModelsHub,
 		allowedHost:    config.AllowedHost,
 		allowedOrigins: allowedOrigins,
+		allowedClients: allowedClients,
 		now:            config.Now,
 		context:        config.Context,
 		assets:         assets,

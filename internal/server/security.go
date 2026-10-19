@@ -3,11 +3,17 @@ package server
 import (
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 )
 
 const contentSecurityPolicy = "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+
+var (
+	tailnetIPv4 = netip.MustParsePrefix("100.64.0.0/10")
+	tailnetIPv6 = netip.MustParsePrefix("fd7a:115c:a1e0::/48")
+)
 
 func validateAuthority(authority string) error {
 	host, port, err := net.SplitHostPort(authority)
@@ -40,8 +46,30 @@ func parseOrigin(origin string) (*url.URL, error) {
 	return parsed, nil
 }
 
+func validateAllowedClients(clients []netip.Addr) (map[netip.Addr]struct{}, error) {
+	if clients == nil {
+		return nil, nil
+	}
+	if len(clients) == 0 {
+		return nil, errInvalidConfig
+	}
+	allowed := make(map[netip.Addr]struct{}, len(clients))
+	for _, client := range clients {
+		client = client.Unmap()
+		if !client.IsValid() || (!tailnetIPv4.Contains(client) && !tailnetIPv6.Contains(client)) {
+			return nil, errInvalidConfig
+		}
+		allowed[client] = struct{}{}
+	}
+	return allowed, nil
+}
+
 func (s *Server) secure(w http.ResponseWriter, request *http.Request) bool {
 	setSecurityHeaders(w.Header())
+	if !s.clientAllowed(request.RemoteAddr) {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden")
+		return false
+	}
 	if request.Host != s.allowedHost {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden")
 		return false
@@ -60,6 +88,18 @@ func validRequestInput(w http.ResponseWriter, request *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func (s *Server) clientAllowed(remoteAddress string) bool {
+	if s.allowedClients == nil {
+		return true
+	}
+	address, err := netip.ParseAddrPort(remoteAddress)
+	if err != nil {
+		return false
+	}
+	_, ok := s.allowedClients[address.Addr().Unmap()]
+	return ok
 }
 
 func (s *Server) originAllowed(origin string) bool {

@@ -138,6 +138,7 @@ func runWithAllFactoriesAndTailnetLookup(ctx context.Context, arguments []string
 		AllowedHost:       allowedHost,
 		AllowedOrigin:     "http://" + allowedHost,
 		AdditionalOrigins: origins,
+		AllowedClients:    config.allowedClients,
 		Context:           application,
 		Assets:            web.Assets,
 	})
