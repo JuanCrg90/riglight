@@ -28,8 +28,11 @@ logs, prompts, or configuration.
 Default to `127.0.0.1` with an SSH tunnel for remote browser access. An explicitly
 approved [direct tailnet mode](docs/tailnet-access.md) instead requires a selected
 IP assigned to an up Linux tailscale0, SO_BINDTODEVICE ingress restriction,
-an exact MagicDNS Host/Origin, and exact Tailscale client-IP admission based on
-TCP RemoteAddr. Empty/invalid client lists
+an exact MagicDNS Host/Origin, and explicit admission based on TCP RemoteAddr:
+either exact Tailscale client IPs or --allow-all-tailnet. All-device mode admits
+Tailscale source addresses through the restricted interface under existing
+access rules, including other members' devices if permitted by the tailnet; it
+does not establish personal ownership. Empty/invalid client lists or mixed modes
 fail closed; forwarded/identity headers never grant access. It does not change
 Serve, Funnel, tailnet access rules or firewall settings. HTTP travels inside
 the encrypted tailnet; no public HTTPS or application login is claimed. Do not

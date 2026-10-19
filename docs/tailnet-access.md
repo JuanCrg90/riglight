@@ -2,8 +2,9 @@
 
 Riglight defaults to loopback. For an explicitly authorized remote test, direct
 HTTP access may be enabled on an assigned Linux Tailscale address, with exact
-MagicDNS Host/Origin validation and a per-client Tailscale IP allowlist. This
-is not public ingress, a login system, or wildcard tailnet trust.
+MagicDNS Host/Origin validation and explicit device admission. Choose a per-client
+Tailscale IP allowlist or explicit all-device admission. This is not public
+ingress or an application login system; loopback remains the default.
 
 All addresses/names below are synthetic. Substitute your own values privately;
 never commit real node names, IPs, client identities or runtime configuration.
@@ -23,6 +24,28 @@ Do not use an alternate IP or
 additional explicitly authorized devices if required. Changing a client's
 Tailscale IP requires updating the private invocation and restarting it.
 
+## All devices in the tailnet
+
+To include current and future devices permitted by your existing tailnet access
+rules, replace the --allow-client options with --allow-all-tailnet:
+
+```sh
+./bin/riglight --tailnet \
+  --listen 100.64.0.10:9090 \
+  --host workstation.example.ts.net:9090 \
+  --allow-all-tailnet --demo
+```
+
+Open the same exact URL on each device while it is connected to Tailscale.
+This admits Tailscale source addresses, not arbitrary LAN/public sources. The
+listener stays bound to tailscale0; exact Host/Origin checks and stream limits
+remain enforced. Do not combine --allow-all-tailnet with --allow-client.
+
+All-device admission is not a personal-device ownership check. Other members'
+or shared devices may also connect if your existing tailnet rules permit them.
+Use the exact allowlist instead if those devices should not see live metrics
+and model aliases. Riglight does not edit the access rules on your behalf.
+
 ## Prerequisites and limits
 
 - Kernel Tailscale networking on Linux with an up `tailscale0` interface.
@@ -39,10 +62,12 @@ Tailscale IP requires updating the private invocation and restarting it.
 - Traffic is HTTP inside the encrypted tailnet, not public HTTPS. Do not enable
   internet forwarding or assume this mode supplies identity/login protection
   outside its assigned Tailscale listener and explicit source-IP admission.
-- TCP RemoteAddr is authoritative. Forwarded/identity headers are not trusted;
-  other peers are denied even if they supply the expected Host and Origin.
-- `--tailnet` requires explicit --listen, --host and --allow-client options.
-  Remote flags without --tailnet, or --dev with --tailnet, fail closed.
+- TCP RemoteAddr is authoritative. Forwarded/identity headers are not trusted.
+  Exact-list mode denies other peers even with the expected Host/Origin; all-device
+  mode still rejects malformed, loopback, LAN and public source addresses.
+- `--tailnet` requires explicit --listen, --host and exactly one admission mode:
+  --allow-client options or --allow-all-tailnet. Mixed modes, remote flags without
+  --tailnet, or --dev with --tailnet, fail closed.
 - Keep the frontend production build current before compiling the Go binary.
   GPU and llama-swap remain separately opt-in; --demo may be used for synthetic
   remote tests without reading hardware or contacting llama-swap.

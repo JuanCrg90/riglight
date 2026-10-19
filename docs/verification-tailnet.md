@@ -2,7 +2,8 @@
 
 Delivered an explicit --tailnet mode while preserving default loopback behavior.
 The listener requires an assigned/up tailscale0 address, Linux SO_BINDTODEVICE,
-an exact configured MagicDNS Host/Origin and exact TCP client-IP admission.
+an exact configured MagicDNS Host/Origin and explicit TCP source admission:
+exact client IPs or the separately enabled --allow-all-tailnet mode.
 Actual node/client values remain private runtime configuration; all examples
 and fixtures in the repository are synthetic.
 
@@ -43,6 +44,36 @@ Chromium projects. Final gates include unchanged dependency/license checks,
 history/export/frontend secret scans, build/source identifier checks and a clean
 Git state. No real addresses, names, metrics, inventory, diagnostics or private
 configuration belong in the public report. Nothing was pushed or published.
+
+## All-device follow-up
+
+The owner confirmed the initial restricted dashboard worked in their Mac browser
+(engine unspecified), then approved access from all devices in their tailnet.
+Added --allow-all-tailnet as an explicit alternative to --allow-client. CLI and
+server configuration reject mixed modes, defaults remain unchanged, and the
+server still parses/unmaps RemoteAddr and rejects zones, malformed addresses,
+loopback/LAN/public/non-Tailscale sources. Shared/other members' devices may also
+connect when allowed by existing tailnet rules; personal ownership is not checked.
+
+- Independent GPT security review approved the five-file Go implementation.
+  Primary reran Go race/tests/vet/gofmt, native/no-CGO builds/tests, 118 frontend
+  tests, lint/types and all 17 Chromium cases successfully. Dependencies and
+  frontend source are unchanged; previous WebKit/Safari limitations still apply.
+- A separate synthetic instance without any client list successfully served the
+  index, all three DEMO snapshot APIs and snapshot/gpus/models events on one SSE.
+  Wrong Host and foreign/null Origins returned 403; security headers persisted.
+- The first loopback-source runtime probe expected an HTTP response but timed
+  out during TCP connect. A repeat confirmed it did not establish a connection;
+  this is not a runtime HTTP 403 proof. Synthetic server tests separately prove
+  negative source/forwarded-spoof handling at the application boundary.
+- Only the primary's previous remote-test instance was gracefully replaced.
+  Runtime checks verified the interface-restricted bind, explicit all-device
+  flag, a newly admitted Tailscale test source, retained Host/Origin denials and
+  unchanged Serve fingerprint. No real metrics or aliases were retained. Other
+  remote devices still need owner testing; no new browser-engine pass is claimed.
+- Actual runtime values and summaries remain ignored/private. Existing tailnet
+  policy, firewall, services and unrelated processes were not changed. Nothing
+  was pushed or published; final secret/identifier scans and Git checks follow.
 
 See [the access guide](tailnet-access.md) for synthetic run/stop examples and
 [the specification](spec-tailnet.md) for the security boundary.

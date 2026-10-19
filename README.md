@@ -80,7 +80,9 @@ network access or install a service.
 For direct browser access over an existing tailnet, see
 [restricted direct tailnet access](docs/tailnet-access.md). That explicit mode
 binds only an assigned Tailscale interface address, requires an exact MagicDNS
-Host/Origin and admits only configured client IPs. Loopback remains the default;
+Host/Origin and requires either configured client IPs or explicit
+`--allow-all-tailnet` admission under existing tailnet access rules. Loopback
+remains the default;
 no public listener, wildcard CORS, Tailscale policy change or service install is
 performed.
 
