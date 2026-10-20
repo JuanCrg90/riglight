@@ -42,4 +42,3 @@ function rate(bytesPerSecond: number): string { return `${Number(bytesPerSecond.
 function readingLabel(name: SystemSensorName): string {
   return name === 'swap' ? 'Swap used and total GiB' : name === 'disk' ? 'Root filesystem used available and total GiB' : 'Selected uplinks RX and TX byte-rates';
 }
-
