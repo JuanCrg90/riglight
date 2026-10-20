@@ -2,10 +2,11 @@ import { Sparkline } from './Sparkline';
 import { GpuSection } from './GpuSection';
 import { ModelSection } from './ModelSection';
 import { ContainerSection } from './ContainerSection';
+import { SystemSection } from './SystemSection';
 import { useMetrics } from './useMetrics';
 
 export function App() {
-  const { sample, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness, models, modelsFresh, containers, containersFreshness } = useMetrics();
+  const { sample, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness, models, modelsFresh, containers, containersFreshness, system, systemFreshness } = useMetrics();
   const hasSample = sample !== null;
   return (
     <main className="dashboard">
@@ -36,6 +37,7 @@ export function App() {
         <GpuSection overview={gpu} freshness={gpuFreshness} />
         <ModelSection overview={models} fresh={modelsFresh} />
         <ContainerSection overview={containers} freshness={containersFreshness} />
+        <SystemSection overview={system} freshness={systemFreshness} />
         <p className="footer-note">Private by design <span>·</span> No history leaves this browser</p>
       </section>
     </main>

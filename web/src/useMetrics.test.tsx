@@ -42,6 +42,43 @@ const gpuFrame = (sampledAt: string, ageMs = 0) => ({
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); FakeEventSource.instances = []; });
 
 describe('useMetrics', () => {
+  it('subscribes to system detail as the fifth named source on the existing stream and expires it independently', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result, unmount } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    const sampledAt = '2026-01-01T00:00:00Z';
+    const overview = { schemaVersion: 1, sampledAt, mode: 'DEMO',
+      swap: { status: 'AVAILABLE', sampledAt, ageMs: 0, usedBytes: 0, totalBytes: 0 },
+      disk: { status: 'UNAVAILABLE', sampledAt: null, ageMs: null, usedBytes: null, availableBytes: null, totalBytes: null },
+      network: { status: 'NOT_READY', sampledAt: null, ageMs: null, rxBytesPerSecond: null, txBytesPerSecond: null } };
+    act(() => source.send(overview, 'system'));
+    expect(result.current.system?.swap.status).toBe('AVAILABLE');
+    expect(result.current.systemFreshness.swap.fresh).toBe(true);
+    act(() => source.send(frame(), 'snapshot'));
+    expect(FakeEventSource.instances).toHaveLength(1);
+    act(() => { vi.advanceTimersByTime(STALE_AFTER_MS); });
+    expect(result.current.systemFreshness.swap.fresh).toBe(false);
+    unmount();
+    expect(source.listeners.has('system')).toBe(false);
+    expect(source.close).toHaveBeenCalledOnce();
+  });
+
+  it('accepts disabled system events independently of CPU mode and keeps them across snapshots', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    const { result } = renderHook(() => useMetrics());
+    const source = FakeEventSource.instances[0]!;
+    act(() => source.send(frame(), 'snapshot'));
+    const disabled = { schemaVersion: 1, sampledAt: '2026-01-01T00:00:00Z', mode: 'DISABLED',
+      swap: { status: 'DISABLED', sampledAt: null, ageMs: null, usedBytes: null, totalBytes: null },
+      disk: { status: 'DISABLED', sampledAt: null, ageMs: null, usedBytes: null, availableBytes: null, totalBytes: null },
+      network: { status: 'DISABLED', sampledAt: null, ageMs: null, rxBytesPerSecond: null, txBytesPerSecond: null } };
+    act(() => source.send(disabled, 'system'));
+    expect(result.current.system?.mode).toBe('DISABLED');
+    act(() => source.send(frame('2026-01-01T00:00:01Z'), 'snapshot'));
+    expect(result.current.system?.mode).toBe('DISABLED');
+  });
+
   it('uses one cleaned-up EventSource per mounted dashboard, including StrictMode cycles', () => {
     vi.useFakeTimers();
     vi.stubGlobal('EventSource', FakeEventSource);
@@ -49,9 +86,11 @@ describe('useMetrics', () => {
     expect(FakeEventSource.instances.length).toBe(2);
     expect(FakeEventSource.instances[0]?.close).toHaveBeenCalledOnce();
     expect(FakeEventSource.instances[0]?.listeners.has('models')).toBe(false);
+    expect(FakeEventSource.instances[0]?.listeners.has('system')).toBe(false);
     unmount();
     expect(FakeEventSource.instances[1]?.close).toHaveBeenCalledOnce();
     expect(FakeEventSource.instances[1]?.listeners.has('models')).toBe(false);
+    expect(FakeEventSource.instances[1]?.listeners.has('system')).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
 

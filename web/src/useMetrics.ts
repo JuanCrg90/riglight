@@ -4,6 +4,8 @@ import { parseGpuOverview, type GpuOverview } from './gpu';
 import { parseModelOverview, type ModelOverview } from './models';
 import { parseContainerOverview, type ContainerOverview } from './containers';
 import { containerFreshness, expireContainerFreshness, type ContainerExpiry, type ContainerFreshness } from './containerFreshness';
+import { parseSystemOverview, type SystemOverview } from './system';
+import { expireSystemFreshness, systemFreshness, type SystemExpiryMap, type SystemFreshness } from './systemFreshness';
 import { modelInventoryFreshness, type ModelExpiry } from './modelFreshness';
 import { expireGpuFreshness, gpuMetricFreshness, type GpuExpiryMap, type GpuFreshness } from './gpuFreshness';
 
@@ -23,9 +25,11 @@ type View = {
   modelsFresh: boolean;
   containers: ContainerOverview | null;
   containersFreshness: ContainerFreshness;
+  system: SystemOverview | null;
+  systemFreshness: SystemFreshness;
 };
 
-const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [], gpu: null, gpuFreshness: {}, models: null, modelsFresh: false, containers: null, containersFreshness: { overview: false, rows: {} } };
+const initial: View = { sample: null, connection: 'CONNECTING', cpuFresh: false, memoryFresh: false, cpuHistory: [], memoryHistory: [], gpu: null, gpuFreshness: {}, models: null, modelsFresh: false, containers: null, containersFreshness: { overview: false, rows: {} }, system: null, systemFreshness: { swap: { fresh: false, expiry: Number.NEGATIVE_INFINITY }, disk: { fresh: false, expiry: Number.NEGATIVE_INFINITY }, network: { fresh: false, expiry: Number.NEGATIVE_INFINITY } } };
 
 function appendPoint(history: Point[], identities: string[], identity: string, point: Point): { history: Point[]; identities: string[] } {
   if (identities.includes(identity)) return { history, identities };
@@ -50,6 +54,9 @@ export function useMetrics(): View {
     const containerExpiries: ContainerExpiry = new Map();
     let containers: ContainerOverview | null = null;
     let containersFreshness: ContainerFreshness = { overview: false, rows: {} };
+    const systemExpiries: SystemExpiryMap = { swap: new Map(), disk: new Map(), network: new Map() };
+    let system: SystemOverview | null = null;
+    let systemFreshnessState: SystemFreshness = initial.systemFreshness;
     let modelsExpiry = Number.NEGATIVE_INFINITY;
     let cpuExpiry = Number.NEGATIVE_INFINITY;
     let memoryExpiry = Number.NEGATIVE_INFINITY;
@@ -61,7 +68,7 @@ export function useMetrics(): View {
     let memoryHistoryIdentities: string[] = [];
     let connection: View['connection'] = 'CONNECTING';
 
-    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness, models, modelsFresh, containers, containersFreshness });
+    const publish = () => setView({ sample: current, connection, cpuFresh, memoryFresh, cpuHistory, memoryHistory, gpu, gpuFreshness, models, modelsFresh, containers, containersFreshness, system, systemFreshness: systemFreshnessState });
     const onOpen = () => { connection = 'CONNECTED'; publish(); };
     const onError = () => { connection = 'RECONNECTING'; publish(); };
     const onSnapshot = (event: Event) => {
@@ -79,6 +86,11 @@ export function useMetrics(): View {
       // Server-computed age avoids comparing clocks on the host and browser.
       // A repeated metric timestamp may shorten, but never extend, its expiry.
       const oldSample = current;
+      if (system && system.mode !== 'DISABLED' && system.mode !== sample.mode) {
+        system = null;
+        systemFreshnessState = initial.systemFreshness;
+        systemExpiries.swap.clear(); systemExpiries.disk.clear(); systemExpiries.network.clear();
+      }
       if (sample.cpu.status === 'AVAILABLE') {
         const reportedExpiry = monotonic + Math.max(0, STALE_AFTER_MS - sample.cpu.ageMs!);
         cpuExpiry = oldSample?.cpu.sampledAt === sample.cpu.sampledAt ? Math.min(cpuExpiry, reportedExpiry) : reportedExpiry;
@@ -143,6 +155,15 @@ export function useMetrics(): View {
       connection = 'CONNECTED';
       publish();
     };
+    const onSystem = (event: Event) => {
+      const overview = parseSystemOverview((event as MessageEvent<string>).data);
+      if (!overview || (overview.mode !== 'DISABLED' && current && overview.mode !== current.mode)) return;
+      const monotonic = performance.now();
+      systemFreshnessState = systemFreshness(overview, system, systemExpiries, monotonic);
+      system = overview;
+      connection = 'CONNECTED';
+      publish();
+    };
     const onModels = (event: Event) => {
       const overview = parseModelOverview((event as MessageEvent<string>).data);
       if (!overview || (current && overview.mode !== 'DISABLED' && overview.mode !== current.mode)) return;
@@ -158,6 +179,7 @@ export function useMetrics(): View {
     source.addEventListener('gpus', onGpus);
     source.addEventListener('models', onModels);
     source.addEventListener('containers', onContainers);
+    source.addEventListener('system', onSystem);
     source.onopen = onOpen;
     source.onerror = onError;
     const timer = window.setInterval(() => {
@@ -171,7 +193,9 @@ export function useMetrics(): View {
       const modelsChanged = nextModels !== modelsFresh;
       const nextContainersFreshness = expireContainerFreshness(containersFreshness, containerExpiries, now);
       const containersChanged = JSON.stringify(nextContainersFreshness) !== JSON.stringify(containersFreshness);
-      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged || modelsChanged || containersChanged) {
+      const nextSystemFreshness = expireSystemFreshness(systemFreshnessState, now);
+      const systemChanged = nextSystemFreshness !== systemFreshnessState;
+      if (nextCPU !== cpuFresh || nextMemory !== memoryFresh || gpuChanged || modelsChanged || containersChanged || systemChanged) {
         const gapAt = new Date().toISOString();
         if (cpuFresh && !nextCPU) {
           const point = appendPoint(cpuHistory, cpuHistoryIdentities, `stale:${now}`, { at: gapAt, value: null });
@@ -187,6 +211,7 @@ export function useMetrics(): View {
         memoryFresh = nextMemory;
         modelsFresh = nextModels;
         containersFreshness = nextContainersFreshness;
+        systemFreshnessState = nextSystemFreshness;
         publish();
       }
     }, 100);
@@ -196,6 +221,7 @@ export function useMetrics(): View {
       source.removeEventListener('gpus', onGpus);
       source.removeEventListener('models', onModels);
       source.removeEventListener('containers', onContainers);
+      source.removeEventListener('system', onSystem);
       source.close();
     };
   }, []);

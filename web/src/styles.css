@@ -68,6 +68,13 @@ h1 { font-size: clamp(25px, 4vw, 34px); letter-spacing: -.045em; font-weight: 50
 .model-state { color: var(--teal); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .model-state[data-state="UNKNOWN"] { color: var(--amber); }
 .model-note { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.system-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.system-card { min-width: 0; border: 1px solid var(--line); background: var(--surface); padding: 14px 16px; }
+.system-card h3 { margin: 0 0 12px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.system-reading { min-height: 32px; margin: 0; overflow-wrap: anywhere; font-size: clamp(14px, 2vw, 19px); line-height: 1.5; font-variant-numeric: tabular-nums; }
+.system-state { display: block; margin-top: 7px; color: var(--teal); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.system-state[data-state="STALE"], .system-state[data-state="UNAVAILABLE"], .system-state[data-state="UNSUPPORTED"], .system-state[data-state="NOT_READY"] { color: var(--amber); }
+.system-labels { margin: 7px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .container-message { margin: 0; border-left: 2px solid var(--line); padding: 12px 14px; color: #9baaa6; background: var(--surface); font-size: 11px; line-height: 1.6; }
 .container-message[data-state="STALE"] { border-color: var(--amber); }
 .container-note { margin: 0 0 10px; color: var(--muted); font-size: 10px; line-height: 1.5; }
@@ -88,6 +95,8 @@ h1 { font-size: clamp(25px, 4vw, 34px); letter-spacing: -.045em; font-weight: 50
   .gpu-grid { grid-template-columns: 1fr; gap: 10px; }
   .gpu-card { padding: 15px; }
   .containers-list { grid-template-columns: 1fr; }
+  .system-grid { grid-template-columns: 1fr; gap: 8px; }
+  .system-card { padding: 13px; }
   .container-card { padding: 13px; }
   .container-readings { gap: 7px; }
   .gpu-primary, .gpu-secondary { gap: 8px; }
