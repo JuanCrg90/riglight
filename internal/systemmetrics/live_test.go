@@ -79,6 +79,75 @@ func TestValidateInterfacesRejectsPrivateUnsafeSelection(t *testing.T) {
 	}
 }
 
+func TestLiveNetworkMissingOrDuplicateRowsClearBaselineThenRecover(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	for _, malformed := range [][]rawCounter{
+		{{name: "uplink1", rx: 11, tx: 11}},
+		{{name: "uplink1", rx: 11, tx: 11}, {name: "uplink1", rx: 12, tx: 12}, {name: "uplink2", rx: 11, tx: 11}},
+	} {
+		hub, err := NewHub(NotReadySample(at, ModeLive))
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := &fakeSource{swap: rawSwap{totalUnits: 1, unitBytes: 1}, disk: rawDisk{blocks: 1, blockBytes: 1}, rows: []rawCounter{{name: "uplink1", rx: 10, tx: 10}, {name: "uplink2", rx: 10, tx: 10}}}
+		now := at
+		live := newLiveWithSource(hub, []string{"uplink1", "uplink2"}, source, func() time.Time { now = now.Add(time.Second); return now })
+		_ = live.Publish(context.Background(), at)
+		source.rows = malformed
+		_ = live.Publish(context.Background(), at)
+		if got := hub.Latest().Network.Status; got != StatusUnavailable {
+			t.Errorf("malformed rows status = %s", got)
+		}
+		source.rows = []rawCounter{{name: "uplink1", rx: 20, tx: 20}, {name: "uplink2", rx: 20, tx: 20}}
+		_ = live.Publish(context.Background(), at)
+		if got := hub.Latest().Network.Status; got != StatusNotReady {
+			t.Errorf("recovery baseline status = %s", got)
+		}
+		source.rows = []rawCounter{{name: "uplink1", rx: 22, tx: 22}, {name: "uplink2", rx: 22, tx: 22}}
+		_ = live.Publish(context.Background(), at)
+		if got := hub.Latest().Network.Status; got != StatusAvailable {
+			t.Errorf("recovered interval status = %s", got)
+		}
+		hub.Close()
+	}
+}
+
+func TestLiveNetworkRejectsDeltaOverflowAndReportsUnchangedZero(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	for _, test := range []struct {
+		name   string
+		second []rawCounter
+		want   Status
+		zero   bool
+	}{
+		{name: "overflow", second: []rawCounter{{name: "uplink1", rx: math.MaxUint64, tx: 0}, {name: "uplink2", rx: 1, tx: 0}}, want: StatusUnavailable},
+		{name: "unchanged", second: []rawCounter{{name: "uplink1", rx: 0, tx: 0}, {name: "uplink2", rx: 0, tx: 0}}, want: StatusAvailable, zero: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			hub, err := NewHub(NotReadySample(at, ModeLive))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer hub.Close()
+			source := &fakeSource{swap: rawSwap{totalUnits: 1, unitBytes: 1}, disk: rawDisk{blocks: 1, blockBytes: 1}, rows: []rawCounter{{name: "uplink1", rx: 0, tx: 0}, {name: "uplink2", rx: 0, tx: 0}}}
+			now := at
+			live := newLiveWithSource(hub, []string{"uplink1", "uplink2"}, source, func() time.Time { now = now.Add(time.Second); return now })
+			_ = live.Publish(context.Background(), at)
+			source.rows = test.second
+			_ = live.Publish(context.Background(), at)
+			sample := hub.Latest()
+			if sample.Network.Status != test.want {
+				t.Fatalf("status = %s, want %s", sample.Network.Status, test.want)
+			}
+			if test.zero && (*sample.Network.RXBytesPerSecond != 0 || *sample.Network.TXBytesPerSecond != 0) {
+				t.Fatalf("rates = %v, %v", *sample.Network.RXBytesPerSecond, *sample.Network.TXBytesPerSecond)
+			}
+		})
+	}
+}
+
 func TestLiveProjectsRawValuesAndReservedDiskSpace(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
