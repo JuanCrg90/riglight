@@ -176,6 +176,7 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		GPUHub:            gpuHub,
 		ModelsHub:         llamaSwapHub,
 		ContainersHub:     containerHub,
+		SystemHub:         systemHub,
 		AllowedHost:       allowedHost,
 		AllowedOrigin:     "http://" + allowedHost,
 		AdditionalOrigins: origins,

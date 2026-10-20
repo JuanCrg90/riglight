@@ -9,6 +9,7 @@ import (
 	"riglight/internal/containers"
 	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
+	"riglight/internal/systemmetrics"
 )
 
 const (
@@ -74,6 +75,20 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 	if unsubscribeContainers != nil {
 		defer unsubscribeContainers()
 	}
+	var systemUpdates <-chan systemmetrics.Sample
+	var unsubscribeSystem func()
+	if s.systemHub != nil {
+		systemSubscription, subscribeErr := s.systemHub.Subscribe()
+		if subscribeErr != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+			return
+		}
+		systemUpdates = systemSubscription.Updates()
+		unsubscribeSystem = systemSubscription.Unsubscribe
+	}
+	if unsubscribeSystem != nil {
+		defer unsubscribeSystem()
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	streamContext, cancel := context.WithCancel(request.Context())
@@ -115,6 +130,16 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	if systemUpdates != nil {
+		select {
+		case initialSystem := <-systemUpdates:
+			if s.writeEvent(w, "system", initialSystem) != nil {
+				return
+			}
+		case <-streamContext.Done():
+			return
+		}
+	}
 	for {
 		select {
 		case sample := <-cpuSubscription.Updates():
@@ -131,6 +156,10 @@ func (s *Server) events(w http.ResponseWriter, request *http.Request) {
 			}
 		case sample := <-containerUpdates:
 			if s.writeEvent(w, "containers", sample) != nil {
+				return
+			}
+		case sample := <-systemUpdates:
+			if s.writeEvent(w, "system", sample) != nil {
 				return
 			}
 		case <-streamContext.Done():

@@ -14,6 +14,7 @@ import (
 	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
 	"riglight/internal/metrics"
+	"riglight/internal/systemmetrics"
 )
 
 var errInvalidConfig = errors.New("invalid server configuration")
@@ -23,6 +24,7 @@ type Config struct {
 	GPUHub            *gpu.Hub
 	ModelsHub         *llamaswap.Hub
 	ContainersHub     *containers.Hub
+	SystemHub         *systemmetrics.Hub
 	AllowedHost       string
 	AllowedOrigin     string
 	AdditionalOrigins []string
@@ -39,6 +41,7 @@ type Server struct {
 	gpuHub          *gpu.Hub
 	modelsHub       *llamaswap.Hub
 	containersHub   *containers.Hub
+	systemHub       *systemmetrics.Hub
 	allowedHost     string
 	allowedOrigins  map[string]struct{}
 	allowedClients  map[netip.Addr]struct{}
@@ -86,6 +89,7 @@ func New(config Config) (*Server, error) {
 		gpuHub:          config.GPUHub,
 		modelsHub:       config.ModelsHub,
 		containersHub:   config.ContainersHub,
+		systemHub:       config.SystemHub,
 		allowedHost:     config.AllowedHost,
 		allowedOrigins:  allowedOrigins,
 		allowedClients:  allowedClients,
@@ -136,6 +140,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		s.containers(w)
+	case "/api/v1/system":
+		if s.systemHub == nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+			return
+		}
+		if !requireGet(w, request) || !validRequestInput(w, request) {
+			return
+		}
+		s.system(w)
 	case "/api/v1/models":
 		if s.modelsHub == nil {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
@@ -191,6 +204,15 @@ func (s *Server) gpus(w http.ResponseWriter) {
 
 func (s *Server) containers(w http.ResponseWriter) {
 	body, err := s.containersHub.Latest().MarshalAt(s.now())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
+}
+
+func (s *Server) system(w http.ResponseWriter) {
+	body, err := s.systemHub.Latest().MarshalAt(s.now())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error")
 		return
