@@ -78,12 +78,13 @@ test('shows partial sensor support and never substitutes zeroes', async ({ page 
     { event: 'gpus', data: partial },
   ));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'GPU 0' })).toBeVisible();
-  await expect(page.getByText('UNSUPPORTED')).toBeVisible();
-  await expect(page.getByText('UNAVAILABLE')).toBeVisible();
-  await expect(page.getByText('—')).toHaveCount(2);
-  await expect(page.getByText('8.0 / 24.0 GiB')).toBeVisible();
-  await expect(page.getByText('0.0%', { exact: true })).toHaveCount(0);
+  const gpu = page.getByRole('region', { name: 'GPU', exact: true });
+  await expect(gpu.getByRole('heading', { name: 'GPU 0' })).toBeVisible();
+  await expect(gpu.getByText('UNSUPPORTED')).toBeVisible();
+  await expect(gpu.getByText('UNAVAILABLE')).toBeVisible();
+  await expect(gpu.getByText('—')).toHaveCount(2);
+  await expect(gpu.getByText('8.0 / 24.0 GiB')).toBeVisible();
+  await expect(gpu.getByText('0.0%', { exact: true })).toHaveCount(0);
 });
 
 test('reports a failed GPU query honestly without rendering a card', async ({ page }) => {
