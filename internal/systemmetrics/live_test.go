@@ -27,11 +27,12 @@ func TestRawNativeSwapUnitZeroIsUnavailable(t *testing.T) {
 }
 
 type cancelAfterSwapSource struct {
-	cancel                  context.CancelFunc
-	diskCalls, networkCalls int
+	cancel                             context.CancelFunc
+	swapCalls, diskCalls, networkCalls int
 }
 
 func (f *cancelAfterSwapSource) Swap(context.Context) (rawSwap, error) {
+	f.swapCalls++
 	f.cancel()
 	return rawSwap{totalUnits: 1, unitBytes: 1}, nil
 }
@@ -42,6 +43,29 @@ func (f *cancelAfterSwapSource) Disk(context.Context) (rawDisk, error) {
 func (f *cancelAfterSwapSource) Network(context.Context) ([]rawCounter, error) {
 	f.networkCalls++
 	return nil, nil
+}
+
+func TestLivePreCanceledDoesNotStartProvidersOrPublish(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	hub, err := NewHub(NotReadySample(at, ModeLive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	source := &cancelAfterSwapSource{cancel: func() {}}
+	live := newLiveWithSource(hub, []string{"uplink1"}, source, func() time.Time { return at })
+	if err := live.Publish(ctx, at); !errors.Is(err, context.Canceled) {
+		t.Fatalf("publish error = %v", err)
+	}
+	if source.swapCalls != 0 || source.diskCalls != 0 || source.networkCalls != 0 {
+		t.Fatalf("provider calls = %#v", source)
+	}
+	if got := hub.Latest().Swap.Status; got != StatusNotReady {
+		t.Fatalf("published canceled sample status = %s", got)
+	}
 }
 
 func TestLiveCancellationStopsRemainingProvidersAndPublication(t *testing.T) {
@@ -58,8 +82,8 @@ func TestLiveCancellationStopsRemainingProvidersAndPublication(t *testing.T) {
 	if err := live.Publish(ctx, at); !errors.Is(err, context.Canceled) {
 		t.Fatalf("publish error = %v", err)
 	}
-	if source.diskCalls != 0 || source.networkCalls != 0 {
-		t.Fatalf("remaining calls = disk %d network %d", source.diskCalls, source.networkCalls)
+	if source.swapCalls != 1 || source.diskCalls != 0 || source.networkCalls != 0 {
+		t.Fatalf("provider calls = swap %d disk %d network %d", source.swapCalls, source.diskCalls, source.networkCalls)
 	}
 	if got := hub.Latest(); got.SampledAt != at || got.Swap.Status != StatusNotReady {
 		t.Fatalf("published canceled sample = %#v", got)
