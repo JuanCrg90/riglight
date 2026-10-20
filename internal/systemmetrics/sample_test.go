@@ -55,6 +55,60 @@ func TestUnavailableSensorsMarshalAllValuesAsNull(t *testing.T) {
 	}
 }
 
+func TestNonAvailableSensorsRejectEveryPartialMeasurement(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	for _, status := range []Status{StatusDisabled, StatusNotReady, StatusUnavailable, StatusUnsupported} {
+		mode := ModeLive
+		if status == StatusDisabled {
+			mode = ModeDisabled
+		}
+		for mask := 1; mask < 4; mask++ {
+			sample := nonAvailableSample(at, mode, status)
+			if mask&1 != 0 {
+				sample.Swap.UsedBytes = uint64Pointer(1)
+			}
+			if mask&2 != 0 {
+				sample.Swap.TotalBytes = uint64Pointer(1)
+			}
+			if _, err := sample.MarshalAt(at); err == nil {
+				t.Errorf("swap status %s mask %d marshalled", status, mask)
+			}
+		}
+		for mask := 1; mask < 8; mask++ {
+			sample := nonAvailableSample(at, mode, status)
+			if mask&1 != 0 {
+				sample.Disk.UsedBytes = uint64Pointer(1)
+			}
+			if mask&2 != 0 {
+				sample.Disk.AvailableBytes = uint64Pointer(1)
+			}
+			if mask&4 != 0 {
+				sample.Disk.TotalBytes = uint64Pointer(1)
+			}
+			if _, err := sample.MarshalAt(at); err == nil {
+				t.Errorf("disk status %s mask %d marshalled", status, mask)
+			}
+		}
+		for mask := 1; mask < 4; mask++ {
+			sample := nonAvailableSample(at, mode, status)
+			if mask&1 != 0 {
+				sample.Network.RXBytesPerSecond = float64Pointer(1)
+			}
+			if mask&2 != 0 {
+				sample.Network.TXBytesPerSecond = float64Pointer(1)
+			}
+			if _, err := sample.MarshalAt(at); err == nil {
+				t.Errorf("network status %s mask %d marshalled", status, mask)
+			}
+		}
+	}
+}
+
+func nonAvailableSample(at time.Time, mode Mode, status Status) Sample {
+	return Sample{SchemaVersion: SchemaVersion, SampledAt: at, Mode: mode, Swap: Swap{Status: status}, Disk: Disk{Status: status}, Network: Network{Status: status}}
+}
+
 func TestAvailableSwapAllowsNoConfiguredSwap(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)

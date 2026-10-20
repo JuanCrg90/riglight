@@ -158,7 +158,7 @@ func (n Network) wire(now time.Time) wireNetwork {
 }
 
 func (s Swap) validate() error {
-	if !validStatus(s.Status) || !validValues(s.Status, s.SampledAt, s.collectedAt, s.UsedBytes != nil && s.TotalBytes != nil) {
+	if !validStatus(s.Status) || !validValues(s.Status, s.SampledAt, s.collectedAt, s.UsedBytes != nil, s.TotalBytes != nil) {
 		return errors.New("invalid swap")
 	}
 	if s.Status == StatusAvailable && (*s.TotalBytes > maxSafeJSONInteger || *s.UsedBytes > *s.TotalBytes) {
@@ -167,8 +167,7 @@ func (s Swap) validate() error {
 	return nil
 }
 func (d Disk) validate() error {
-	values := d.UsedBytes != nil && d.AvailableBytes != nil && d.TotalBytes != nil
-	if !validStatus(d.Status) || !validValues(d.Status, d.SampledAt, d.collectedAt, values) {
+	if !validStatus(d.Status) || !validValues(d.Status, d.SampledAt, d.collectedAt, d.UsedBytes != nil, d.AvailableBytes != nil, d.TotalBytes != nil) {
 		return errors.New("invalid disk")
 	}
 	if d.Status == StatusAvailable && (*d.TotalBytes == 0 || *d.TotalBytes > maxSafeJSONInteger || *d.UsedBytes > *d.TotalBytes || *d.AvailableBytes > *d.TotalBytes || *d.UsedBytes > *d.TotalBytes-*d.AvailableBytes) {
@@ -177,8 +176,7 @@ func (d Disk) validate() error {
 	return nil
 }
 func (n Network) validate() error {
-	values := n.RXBytesPerSecond != nil && n.TXBytesPerSecond != nil
-	if !validStatus(n.Status) || !validValues(n.Status, n.SampledAt, n.collectedAt, values) {
+	if !validStatus(n.Status) || !validValues(n.Status, n.SampledAt, n.collectedAt, n.RXBytesPerSecond != nil, n.TXBytesPerSecond != nil) {
 		return errors.New("invalid network")
 	}
 	if n.Status == StatusAvailable && (!validRate(*n.RXBytesPerSecond) || !validRate(*n.TXBytesPerSecond)) {
@@ -190,11 +188,19 @@ func validMode(mode Mode) bool { return mode == ModeDisabled || mode == ModeDemo
 func validStatus(status Status) bool {
 	return status == StatusDisabled || status == StatusNotReady || status == StatusAvailable || status == StatusUnavailable || status == StatusUnsupported
 }
-func validValues(status Status, sampledAt *time.Time, collectedAt time.Time, values bool) bool {
-	if status != StatusAvailable {
-		return sampledAt == nil && collectedAt.IsZero() && !values
+func validValues(status Status, sampledAt *time.Time, collectedAt time.Time, values ...bool) bool {
+	for _, value := range values {
+		if status != StatusAvailable && value {
+			return false
+		}
+		if status == StatusAvailable && !value {
+			return false
+		}
 	}
-	return sampledAt != nil && !sampledAt.IsZero() && !collectedAt.IsZero() && values
+	if status != StatusAvailable {
+		return sampledAt == nil && collectedAt.IsZero()
+	}
+	return sampledAt != nil && !sampledAt.IsZero() && !collectedAt.IsZero()
 }
 func validRate(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= float64(maxSafeJSONInteger)
