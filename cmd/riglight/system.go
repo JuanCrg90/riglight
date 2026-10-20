@@ -17,11 +17,12 @@ type systemWorker struct {
 	hub       *systemmetrics.Hub
 	publisher systemPublisher
 	done      chan struct{}
+	now       func() time.Time
 	once      sync.Once
 }
 
 func newSystemWorker(hub *systemmetrics.Hub, publisher systemPublisher) *systemWorker {
-	return &systemWorker{hub: hub, publisher: publisher, done: make(chan struct{})}
+	return &systemWorker{hub: hub, publisher: publisher, done: make(chan struct{}), now: time.Now}
 }
 
 // Start keeps system calls on their own serial worker. A blocked native syscall
@@ -30,19 +31,25 @@ func (w *systemWorker) Start(ctx context.Context) {
 	w.once.Do(func() {
 		go func() {
 			defer close(w.done)
-			w.collect(ctx, time.Now())
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case at := <-ticker.C:
-					w.collect(ctx, at)
-				}
-			}
+			w.run(ctx, ticker.C)
 		}()
 	})
+}
+
+func (w *systemWorker) run(ctx context.Context, ticks <-chan time.Time) {
+	w.collect(ctx, w.now())
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			// A blocked source can leave ticker values buffered; attempt time is
+			// the actual collection start, never that stale scheduled tick.
+			w.collect(ctx, w.now())
+		}
+	}
 }
 func (w *systemWorker) collect(ctx context.Context, at time.Time) {
 	if ctx.Err() == nil {
