@@ -34,10 +34,10 @@ export function App() {
           <div><strong>Waiting for the first sample</strong><p>Metrics appear when the local Riglight service is connected.</p></div>
           <span className="sample-label">NO SAMPLE</span>
         </div>}
+        <SystemSection overview={system} freshness={systemFreshness} />
         <GpuSection overview={gpu} freshness={gpuFreshness} />
         <ModelSection overview={models} fresh={modelsFresh} />
         <ContainerSection overview={containers} freshness={containersFreshness} />
-        <SystemSection overview={system} freshness={systemFreshness} />
         <p className="footer-note">Private by design <span>·</span> No history leaves this browser</p>
       </section>
     </main>

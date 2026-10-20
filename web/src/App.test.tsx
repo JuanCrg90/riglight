@@ -50,6 +50,26 @@ describe('dashboard shell', () => {
     expect(screen.getByRole('region', { name: 'Memory used' })).toHaveTextContent('7.5 / 14.9 GiB');
   });
 
+  it('places system detail after live metrics and immediately before GPU', () => {
+    const listeners = new Map<string, (event: Event) => void>();
+    vi.stubGlobal('EventSource', class {
+      addEventListener(type: string, listener: EventListener) { listeners.set(type, listener as (event: Event) => void); }
+      removeEventListener(type: string) { listeners.delete(type); }
+      close() {}
+    });
+    render(<App />);
+    const timestamp = '2026-01-01T00:00:00Z';
+    act(() => listeners.get('snapshot')?.({ data: JSON.stringify({
+      schemaVersion: 1, sampledAt: timestamp, mode: 'LIVE',
+      cpu: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, utilizationPercent: 25 },
+      memory: { status: 'AVAILABLE', sampledAt: timestamp, ageMs: 0, usedBytes: 4_000_000_000, totalBytes: 8_000_000_000 },
+    }) } as MessageEvent));
+    const system = screen.getByRole('region', { name: 'System detail' });
+    expect(screen.getByText('LIVE MODE').compareDocumentPosition(system) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Memory used' }).compareDocumentPosition(system) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(system.nextElementSibling).toBe(screen.getByRole('region', { name: 'GPU' }));
+  });
+
   it('describes generic private workstation telemetry', () => {
     vi.stubGlobal('EventSource', class { addEventListener() {} removeEventListener() {} close() {} });
     render(<App />);
