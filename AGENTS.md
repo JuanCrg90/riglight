@@ -5,6 +5,10 @@
 - Follow `docs/spec.md`, `tasks/plan.md`, and `tasks/todo.md`.
 - CPU/RAM and optional NVIDIA GPU monitoring are implemented and reviewed.
   GPU remains opt-in with --gpu; no identity/process APIs or GPU controls.
+- Owner approved optional system detail: swap, root-filesystem capacity only,
+  and aggregate RX/TX for explicitly configured uplinks. Follow docs/spec-system.md
+  and tasks/system-plan.md. Implement/test only; no actual interface selection/
+  discovery, host-data verification or running-app changes without later approval.
 - The owner approved read-only llama-swap inventory/coarse states only; follow
   `docs/spec-models.md` and `tasks/models-plan.md`. Default disabled; no auth flow,
   logs, inference, commands/configuration, request activity or model controls.
