@@ -19,6 +19,53 @@ func (f *fakeSource) Swap(context.Context) (rawSwap, error)         { return f.s
 func (f *fakeSource) Disk(context.Context) (rawDisk, error)         { return f.disk, f.diskErr }
 func (f *fakeSource) Network(context.Context) ([]rawCounter, error) { return f.rows, f.netErr }
 
+func TestRawNativeSwapUnitZeroIsUnavailable(t *testing.T) {
+	t.Parallel()
+	if _, _, ok := projectSwap(rawSwapFromNative(4, 3, 0)); ok {
+		t.Fatal("zero raw native unit projected as bytes")
+	}
+}
+
+type cancelAfterSwapSource struct {
+	cancel                  context.CancelFunc
+	diskCalls, networkCalls int
+}
+
+func (f *cancelAfterSwapSource) Swap(context.Context) (rawSwap, error) {
+	f.cancel()
+	return rawSwap{totalUnits: 1, unitBytes: 1}, nil
+}
+func (f *cancelAfterSwapSource) Disk(context.Context) (rawDisk, error) {
+	f.diskCalls++
+	return rawDisk{}, nil
+}
+func (f *cancelAfterSwapSource) Network(context.Context) ([]rawCounter, error) {
+	f.networkCalls++
+	return nil, nil
+}
+
+func TestLiveCancellationStopsRemainingProvidersAndPublication(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	hub, err := NewHub(NotReadySample(at, ModeLive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	source := &cancelAfterSwapSource{cancel: cancel}
+	live := newLiveWithSource(hub, []string{"uplink1"}, source, func() time.Time { return at })
+	if err := live.Publish(ctx, at); !errors.Is(err, context.Canceled) {
+		t.Fatalf("publish error = %v", err)
+	}
+	if source.diskCalls != 0 || source.networkCalls != 0 {
+		t.Fatalf("remaining calls = disk %d network %d", source.diskCalls, source.networkCalls)
+	}
+	if got := hub.Latest(); got.SampledAt != at || got.Swap.Status != StatusNotReady {
+		t.Fatalf("published canceled sample = %#v", got)
+	}
+}
+
 func TestValidateInterfacesRejectsPrivateUnsafeSelection(t *testing.T) {
 	t.Parallel()
 	got, err := ValidateInterfaces([]string{"uplink2", "uplink1"})

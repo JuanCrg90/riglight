@@ -50,6 +50,9 @@ func newLiveWithSource(hub *Hub, names []string, source liveSource, now func() t
 func (l *Live) Publish(ctx context.Context, attemptAt time.Time) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	sample := Sample{SchemaVersion: SchemaVersion, SampledAt: attemptAt, Mode: ModeLive, Swap: Swap{Status: StatusUnavailable}, Disk: Disk{Status: StatusUnavailable}, Network: Network{Status: StatusUnavailable}}
 	if raw, err := l.source.Swap(ctx); err != nil {
 		sample.Swap.Status = statusForError(err)
@@ -57,11 +60,17 @@ func (l *Live) Publish(ctx context.Context, attemptAt time.Time) error {
 		at := l.now()
 		sample.Swap = AvailableSwap(at, at, used, total)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if raw, err := l.source.Disk(ctx); err != nil {
 		sample.Disk.Status = statusForError(err)
 	} else if used, available, total, ok := projectDisk(raw); ok {
 		at := l.now()
 		sample.Disk = AvailableDisk(at, at, used, available, total)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if rows, err := l.source.Network(ctx); err != nil {
 		l.baseline = nil
@@ -69,6 +78,9 @@ func (l *Live) Publish(ctx context.Context, attemptAt time.Time) error {
 	} else {
 		at := l.now()
 		sample.Network = l.network(rows, at)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return l.hub.Publish(sample)
 }
@@ -78,6 +90,10 @@ func statusForError(err error) Status {
 	}
 	return StatusUnavailable
 }
+func rawSwapFromNative(total, free uint64, unit uint32) rawSwap {
+	return rawSwap{totalUnits: total, freeUnits: free, unitBytes: uint64(unit)}
+}
+
 func projectSwap(raw rawSwap) (uint64, uint64, bool) {
 	if raw.unitBytes == 0 || raw.freeUnits > raw.totalUnits {
 		return 0, 0, false

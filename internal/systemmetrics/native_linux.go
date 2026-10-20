@@ -18,11 +18,7 @@ func (nativeSource) Swap(context.Context) (rawSwap, error) {
 	if err := syscall.Sysinfo(&info); err != nil {
 		return rawSwap{}, nativeError(err)
 	}
-	unit := uint64(info.Unit)
-	if unit == 0 {
-		unit = 1
-	}
-	return rawSwap{totalUnits: info.Totalswap, freeUnits: info.Freeswap, unitBytes: unit}, nil
+	return rawSwapFromNative(info.Totalswap, info.Freeswap, info.Unit), nil
 }
 func (nativeSource) Disk(context.Context) (rawDisk, error) {
 	var stat syscall.Statfs_t
@@ -37,7 +33,7 @@ func (nativeSource) Disk(context.Context) (rawDisk, error) {
 func (nativeSource) Network(ctx context.Context) ([]rawCounter, error) {
 	counters, err := net.IOCountersWithContext(ctx, true)
 	if err != nil {
-		return nil, err
+		return nil, nativeError(err)
 	}
 	out := make([]rawCounter, len(counters))
 	for index, counter := range counters {
