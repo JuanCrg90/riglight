@@ -68,6 +68,7 @@ h1 { font-size: clamp(25px, 4vw, 34px); letter-spacing: -.045em; font-weight: 50
 .model-state { color: var(--teal); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .model-state[data-state="UNKNOWN"] { color: var(--amber); }
 .model-note { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.system-message { margin: 0 0 10px; border-left: 2px solid var(--line); padding: 10px 12px; color: #9baaa6; background: var(--surface); font-size: 10px; line-height: 1.6; }
 .system-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .system-card { min-width: 0; border: 1px solid var(--line); background: var(--surface); padding: 14px 16px; }
 .system-card h3 { margin: 0 0 12px; color: var(--muted); font-size: 11px; font-weight: 500; }

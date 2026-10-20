@@ -8,6 +8,8 @@ const GIB = 1024 ** 3;
 export function SystemSection({ overview, freshness }: Props) {
   return <section className="system-section" aria-label="System detail">
     <div className="section-heading"><h2>System detail</h2><span>Read-only</span></div>
+    {overview?.mode === 'DISABLED' && <p className="system-message" role="status">System detail is disabled. Enable optional system detail to report these readings; live network rates also require explicitly configured uplinks.</p>}
+    {!overview && <p className="system-message" role="status">Waiting for system detail from the local Riglight service.</p>}
     <div className="system-grid">
       <Reading name="swap" title="Swap" overview={overview} freshness={freshness} />
       <Reading name="disk" title="Root filesystem" overview={overview} freshness={freshness} />
@@ -38,7 +40,10 @@ function Reading({ name, title, overview, freshness }: ReadingProps) {
 }
 
 function gib(bytes: number): string { return (bytes / GIB).toFixed(1); }
-function rate(bytesPerSecond: number): string { return `${Number(bytesPerSecond.toFixed(2))} B/s`; }
+function rate(bytesPerSecond: number): string {
+  if (bytesPerSecond > 0 && bytesPerSecond < 0.01) return '<0.01 B/s';
+  return `${Number(bytesPerSecond.toFixed(2))} B/s`;
+}
 function readingLabel(name: SystemSensorName): string {
   return name === 'swap' ? 'Swap used and total GiB' : name === 'disk' ? 'Root filesystem used available and total GiB' : 'Selected uplinks RX and TX byte-rates';
 }

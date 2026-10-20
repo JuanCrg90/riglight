@@ -11,6 +11,7 @@ export type SystemOverview = {
   network: SystemSensor<{ rxBytesPerSecond: number | null; txBytesPerSecond: number | null }>;
 };
 
+const MAX_SYSTEM_PAYLOAD_BYTES = 16 * 1024;
 const statuses: SystemStatus[] = ['DISABLED', 'NOT_READY', 'AVAILABLE', 'UNAVAILABLE', 'UNSUPPORTED'];
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const exactKeys = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -39,6 +40,7 @@ function validSensor(value: unknown, kind: 'swap' | 'disk' | 'network', enabled:
 }
 
 export function parseSystemOverview(raw: string): SystemOverview | null {
+  if (raw.length > MAX_SYSTEM_PAYLOAD_BYTES || new TextEncoder().encode(raw).length > MAX_SYSTEM_PAYLOAD_BYTES) return null;
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return null; }
   if (!record(value) || !exactKeys(value, ['schemaVersion', 'sampledAt', 'mode', 'swap', 'disk', 'network']) ||

@@ -22,6 +22,12 @@ describe('parseSystemOverview', () => {
     expect(result?.network.rxBytesPerSecond).toBe(0.25);
   });
 
+  it('rejects payloads larger than the bounded flat DTO allowance before parsing', () => {
+    const raw = `${' '.repeat(16 * 1024)}${JSON.stringify(fixture())}`;
+    expect(raw.length).toBeGreaterThan(16 * 1024);
+    expect(parseSystemOverview(raw)).toBeNull();
+  });
+
   it('requires exact object keys and all sensor measurements', () => {
     const missing = fixture();
     delete (missing as Record<string, unknown>).mode;
