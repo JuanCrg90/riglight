@@ -3,8 +3,9 @@
 **Your AI workstation, at a glance.**
 
 Riglight is a private, read-only dashboard for Linux workstation CPU/RAM,
-optional NVIDIA GPU metrics, optional llama-swap inventory, and selected Docker
-container monitoring through a separate filtering helper. It provides
+optional NVIDIA GPU metrics, optional llama-swap inventory, selected Docker
+container monitoring through a separate filtering helper, and optional system
+detail (swap, root-filesystem capacity and selected-uplink traffic). It provides
 live browser updates and an explicit synthetic demo mode. It binds to loopback
 by default; it is not a remote shell or control plane.
 
@@ -95,11 +96,20 @@ performed.
 For a wholly synthetic combined view:
 
 ```sh
-./bin/riglight --demo --gpu --llama-swap --docker
+./bin/riglight --demo --gpu --llama-swap --docker --system-details
 ```
 
 This does not start the filtering helper or contact Docker. Preparing/building the helper is separate from permission to run
 it against a real daemon; follow [the access guide](docs/docker-access.md).
+
+## Optional system detail
+
+`--system-details` adds swap, root-filesystem used/available/total capacity and
+aggregate RX/TX rates for explicitly selected uplinks. Live mode requires 1–8
+repeatable `--network-interface` selections; no names/addresses/devices or mount
+paths are exposed. `--demo --system-details` needs no selection and never reads
+host counters. See [setup and meanings](docs/system-detail.md),
+[the contract](docs/spec-system.md) and [tasks](tasks/system-plan.md).
 
 ## Deployment preparation
 

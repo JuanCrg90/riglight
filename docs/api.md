@@ -69,6 +69,7 @@ No fields outside this allowlist are serialized.
 | `GET` | `/api/v1/snapshot` | The current sample schema object |
 | `GET` | `/api/v1/events` | Server-Sent Events carrying current sample objects |
 | `GET` | `/api/v1/containers` | Optional selected-container snapshot described below |
+| `GET` | `/api/v1/system` | Optional swap/root-capacity/selected-uplink snapshot |
 
 API and stream responses are same-origin, have `Cache-Control: no-store`, and
 require the configured exact `Host`. A missing `Origin` is permitted for
@@ -275,3 +276,56 @@ separately from Riglight and admits trusted local processes to the projected DTO
 not arbitrary browser origins. See [the setup boundary](docker-access.md) and
 [the exact specification](spec-docker.md). Building/testing it does not install,
 run, grant Docker access or verify compatibility with a real daemon.
+
+## System detail
+
+`GET /api/v1/system` and named `system` events are a fifth source on the existing
+SSE connection/writer/client slot. Opt in with --system-details; live mode requires
+1–8 exact repeatable --network-interface names. Default/demo never construct live
+providers. Only root-filesystem capacity is collected; no parameterized disk paths.
+
+```json
+{
+  "schemaVersion": 1,
+  "sampledAt": "2026-01-01T00:00:02Z",
+  "mode": "DEMO",
+  "swap": {"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","ageMs":0,"usedBytes":1073741824,"totalBytes":4294967296},
+  "disk": {"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","ageMs":0,"usedBytes":214748364800,"availableBytes":268435456000,"totalBytes":536870912000},
+  "network": {"status":"AVAILABLE","sampledAt":"2026-01-01T00:00:02Z","ageMs":0,"rxBytesPerSecond":1048576,"txBytesPerSecond":262144}
+}
+```
+
+Exact top-level/sensor key sets are shown above: all fields are required, unknown
+keys and omitted nulls are invalid. Mode is DISABLED, DEMO or LIVE. DISABLED mode
+requires all three sensors DISABLED; enabled modes prohibit DISABLED sensors.
+Other sensor statuses are NOT_READY, AVAILABLE, UNAVAILABLE and UNSUPPORTED.
+Only AVAILABLE has a UTC timestamp, nonnegative safe integer ageMs and nonnull
+measurements; every non-available sensor has timestamp/age/all measurements null.
+UNSUPPORTED denotes explicit absent capability, not ordinary errors, missing
+interfaces or no configured swap. Top sampledAt records the attempt only.
+
+Swap used/total are safe integer bytes with 0 <= used <= total. A fresh (0,0)
+means no configured swap; it is not missing data. Root capacity requires safe
+integers, total>0 and used+available<=total. Available is Bavail capacity; reserved
+space can account for the difference. Any displayed percentage uses used/total.
+No swap paging counters, paths, device/filesystem identities or inodes are exposed.
+
+Network RX/TX are finite fractional bytes/second from actual monotonic elapsed
+counter intervals, bounded 0..Number.MAX_SAFE_INTEGER. First interval or individual
+counter reset is NOT_READY; missing/duplicate selected counters, failed reads,
+overflow or invalid arithmetic cannot produce a partial healthy total. Baselines
+recover after reset/failure; valid zero deltas are genuinely idle. Selection names
+and cumulative counters stay private, and rates do not certify internet/link health.
+
+Each sensor has independent monotonic age and six-second browser expiry. The
+bounded 32-timestamp LRU per sensor prevents retained replay identities from
+renewing expiry (including failure/A-B-A/shortened/reconnect cases). An evicted
+identity may be treated as unseen; there is no unbounded anti-replay guarantee.
+Unseen wall-clock rollback timestamps remain valid. No charts/history/export.
+
+The independent two-second worker uses checked raw Linux swap/root-block
+arithmetic and the pinned selected-interface counter reader. A blocked kernel/proc
+call can make system data stale, but cannot block other sources/HTTP or extend
+shared shutdown; no hard syscall-cancel guarantee. Existing Host/Origin/source
+admission, GET/input and no-store/security guards apply unchanged. See
+[system setup/meaning](system-detail.md) and [the exact contract](spec-system.md).

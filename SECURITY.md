@@ -84,6 +84,20 @@ Both boundaries enforce deadlines/body/header limits, generic errors, monotonic
 sample age and no persistence/export. No logs/events/control endpoints are used.
 Live daemon compatibility/deployment requires separate verification and consent.
 
+System detail is separately enabled with --system-details and explicit live
+--network-interface selections. It projects only swap bytes, root-filesystem
+used/available/total bytes and aggregate RX/TX rates. No interface/device/mount
+identifiers, IP/MAC addresses, types, processes or raw counters are exposed.
+The root path is fixed and browsers cannot select interfaces/paths. Disabled/demo
+never construct live sources. Kernel/proc reads are isolated from other collectors
+and HTTP; a blocked syscall can make system data stale but cannot extend the
+shared shutdown wait. Byte arithmetic and per-interface reset/delta/elapsed-rate
+calculations are checked before serialization. Freshness/replay protection is
+bounded per sensor; no unbounded history or anti-replay claim is made. See
+[the system-detail boundary](docs/system-detail.md). Implementing/testing it does
+not authorize actual interface discovery, live host-data verification or app
+restart. These remain later operator decisions.
+
 No telemetry or external frontend assets are intended. Security checks and
 package installation may contact public registries or advisory services as
 described in the plan. Report only verification that was actually run. Public
