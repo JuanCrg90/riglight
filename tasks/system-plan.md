@@ -1,5 +1,10 @@
 # Plan: optional system detail
 
+Status: implemented, independently reviewed and integrated. See
+[verification](../docs/verification-system.md). Checkboxes record implemented work
+and executed checks, not a WebKit/live-host pass. Actual uplink selection and
+live enablement are not performed; existing running instances remain unchanged.
+
 Follow [the system-detail specification](../docs/spec-system.md). Owner chose root
 filesystem only and configured uplinks. No live interface discovery/configuration,
 app/helper restart, daemon/permission/service/network changes or publication.
@@ -7,21 +12,21 @@ Primary owns architecture/delegation/integration; GPT-only isolated worktrees.
 
 ## Contract and Go slices
 
-- [ ] Independent plan/contract review, then tests-first typed contract and
+- [x] Independent plan/contract review, then tests-first typed contract and
   Validate/MarshalAt with per-field monotonic ages, disabled/demo/null/zero
   semantics. Files: internal/systemmetrics/sample.go + sample_test.go.
-- [ ] Canonical hub/demo source and synthetic fixtures. Files: hub.go/demo.go +
+- [x] Canonical hub/demo source and synthetic fixtures. Files: hub.go/demo.go +
   tests. Depends contract. Verify focused Go/race/serialization; no live calls.
-- [ ] Injected production source and exact interface selection validation.
+- [x] Injected production source and exact interface selection validation.
   Project only swap bytes, root used/available/total and selected RX/TX deltas.
   Files: live.go/config.go + tests (split if >5). Depends contract. Verify nil/
   failures/reserved-space/numeric boundaries, genuine zero, per-interface resets,
   missing/duplicate selections, sum overflow, nonuniform monotonic intervals and
   baseline recovery. All provider data synthetic; no host/network discovery.
-- [ ] CLI --system-details + repeatable --network-interface, independent worker,
+- [x] CLI --system-details + repeatable --network-interface, independent worker,
   disabled/demo no construction and shared shutdown deadline. Files: cmd/riglight
   main.go/system.go + tests. Depends source. Verify factory/CLI/slow-source tests.
-- [ ] Optional server hub/snapshot and fifth named system SSE source using the
+- [x] Optional server hub/snapshot and fifth named system SSE source using the
   existing writer/client slot/subscriptions/security controls. Files: server.go,
   events.go + tests. Verify all guards/single stream/cancel/race and other sources.
 - Checkpoint: separate Go correctness/security review and accepted fixes before
@@ -29,12 +34,12 @@ Primary owns architecture/delegation/integration; GPT-only isolated worktrees.
 
 ## Frontend slices (parallel against frozen contract)
 
-- [ ] Strict system DTO parser and per-sensor bounded freshness, six-second age,
+- [x] Strict system DTO parser and per-sensor bounded freshness, six-second age,
   timer expiry only, min-expiry persistence, replay/mode/rollback boundaries.
   Files: system.ts/systemFreshness.ts + tests. Verify synthetic frontend tests.
-- [ ] Existing hook's named system event/cleanup/mode binding (including disabled),
+- [x] Existing hook's named system event/cleanup/mode binding (including disabled),
   no extra transport/fetch; tests. Depends parser. Files: hook + hook tests.
-- [ ] Accessible compact System detail UI/App/styles/tests with swap/no-swap,
+- [x] Accessible compact System detail UI/App/styles/tests with swap/no-swap,
   root used/available/total, selected-interface receive/transmit units and honest
   disabled/pending/unavailable/stale values. No identities/charts/controls/export.
   Split component and hook commits; no Go/e2e/docs edits by frontend writer.
@@ -43,17 +48,17 @@ Primary owns architecture/delegation/integration; GPT-only isolated worktrees.
 
 ## Primary integration and handoff
 
-- [ ] Add synthetic Chromium/WebKit system project on 19094; fifth-source single
+- [x] Add synthetic Chromium/WebKit system project on 19094; fifth-source single
   EventSource, zero swap/idle rates, reserved disk space, partial/stale/replay/
   malformed/mode cleanup and responsive/read-only cases. Run all previous suites.
-- [ ] Document CLI/configuration, numeric meanings, privacy and syscall-cancel
+- [x] Document CLI/configuration, numeric meanings, privacy and syscall-cancel
   limits in README/SECURITY/docs/api.md and system guide; no actual interface
   identifiers or readings. Live selection/enablement remains a later decision.
-- [ ] Full pinned frontend frozen tests/lint/types/build, Go native/no-CGO tests/
+- [x] Full pinned frontend frozen tests/lint/types/build, Go native/no-CGO tests/
   race/vet/format/build, both existing binaries, audits/module/link-license graph
   comparison, history/export/frontend/binary identifier/path/source-map scans.
   Report actual WebKit launch blockers, not skips or a Safari success claim.
-- [ ] Independent combined final review, reverify fixes, record verification and
+- [x] Independent combined final review, reverify fixes, record verification and
   task completion; clean verified commits, no running-app changes or push.
 
 ## Verification commands
