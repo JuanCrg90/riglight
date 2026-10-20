@@ -50,7 +50,10 @@ journal; do not claim systemd metadata/arguments are anonymous or publish logs.
 
 Restrict address families to AF_UNIX/AF_INET/AF_INET6, default IPAddressDeny=any
 and IPAddressAllow=localhost. Optional tailnet drop-in adds only the conventional
-Tailscale ranges 100.64.0.0/10 and fd7a:115c:a1e0::/48. Requires explicit private
+Tailscale ranges 100.64.0.0/10 and fd7a:115c:a1e0::/48. The tailnet profile also
+adds AF_NETLINK to the inherited family allowlist for Go's NETLINK_ROUTE interface
+and address validation. This grants no capabilities; the base unit stays unchanged.
+Requires explicit private
 CLI tailnet flags + up assigned tailscale0 + application SO_BINDTODEVICE and exact
 Host/Origin/source admission. No added capabilities if binding fails; fail closed.
 Systemd IP filtering is defense in depth, may be unavailable without cgroup/BPF

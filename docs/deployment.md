@@ -94,7 +94,13 @@ itself: compose the corresponding options in the one private argument assignment
 
 Default IP filtering permits localhost only. Add the tailnet drop-in as well as
 explicit private CLI `--tailnet --listen ... --host ...` and exactly one admission
-mode. Synthetic example (never replace public examples with actual values):
+mode. The tailnet profile also adds AF_NETLINK to the inherited address-family
+allowlist: Go uses NETLINK_ROUTE for interface/address validation before binding.
+Blocking it prevents startup even when the configured address is valid. This adds
+no capabilities or network configuration changes; keep the base restrictions,
+exact application guards and empty capability sets.
+
+Synthetic example (never replace public examples with actual values):
 
 ```text
 RIGLIGHT_ARGS=--tailnet --listen 100.64.0.10:9090 --host workstation.example.ts.net:9090 --allow-client 100.64.0.20

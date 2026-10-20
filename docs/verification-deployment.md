@@ -46,6 +46,28 @@ No full app or browser rerun was needed for this documentation/example-only chan
 the existing Docker increment's test results and WebKit native-library blocker
 remain unchanged. No new Safari or live-service success is claimed.
 
+## Subsequent tailnet sandbox regression
+
+A separately approved private rollout exposed a startup failure not covered by
+these offline syntax checks: Go's interface/address lookup uses AF_NETLINK
+(NETLINK_ROUTE), which the base family allowlist deliberately excludes. The
+optional tailnet profile now adds exactly AF_NETLINK, retaining inherited
+AF_UNIX/AF_INET/AF_INET6 and all empty-capability, listener and admission controls.
+No base-unit, helper policy, application, dependency or legal-notice change.
+
+- Added a regression assertion requiring that exact optional family addition
+  without resets/capability grants. **Six public example tests passed**, including
+  all staged analyzer combinations and the invalid-profile negative control.
+- A private, read-only Go probe reproduced the mechanism: interface lookup
+  succeeds normally and fails under a child-only seccomp filter returning
+  EAFNOSUPPORT for socket(AF_NETLINK). No host policy changed, listener was
+  opened or interface/address values recorded.
+- A private recovery procedure preserves verified existing accounts/configuration
+  and artifacts, backs up the former profile, changes only the approved tailnet
+  profile, and starts/verifies the two owned units before enabling boot. It does
+  not rerun initial provisioning. Recovery execution and actual sandbox/boot
+  success are not claimed by the preparation/regression checks.
+
 ## Files and remaining operator decisions
 
 - deploy/systemd/: two service units, two environment examples, three explicit

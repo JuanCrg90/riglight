@@ -51,7 +51,7 @@ HARDENING = {
 }
 OPTIONAL_DROP_INS = {
     "riglight.service.d/10-gpu.conf": """[Service]\nPrivateDevices=no\nDevicePolicy=closed\nDeviceAllow=/dev/nvidiactl rw\nDeviceAllow=/dev/nvidia0 rw\n""",
-    "riglight.service.d/20-tailnet.conf": """[Unit]\nAfter=tailscaled.service\n\n[Service]\nIPAddressAllow=100.64.0.0/10\nIPAddressAllow=fd7a:115c:a1e0::/48\n""",
+    "riglight.service.d/20-tailnet.conf": """[Unit]\nAfter=tailscaled.service\n\n[Service]\nRestrictAddressFamilies=AF_NETLINK\nIPAddressAllow=100.64.0.0/10\nIPAddressAllow=fd7a:115c:a1e0::/48\n""",
     "riglight.service.d/30-docker-proxy.conf": """[Unit]\nWants=riglight-docker-proxy.service\nAfter=riglight-docker-proxy.service\n""",
 }
 FORBIDDEN_DIRECTIVES = {
@@ -147,6 +147,16 @@ class BaseExampleTests(unittest.TestCase):
                 self.assertNotRegex(contents, r"(?m)^\s*DeviceAllow=.*\*")
         self.assertNotIn("Wants=", OPTIONAL_DROP_INS["riglight.service.d/20-tailnet.conf"])
         self.assertNotIn("Wants=", OPTIONAL_DROP_INS["riglight.service.d/10-gpu.conf"])
+
+    def test_tailnet_profile_permits_required_interface_queries(self):
+        contents = (ROOT / "riglight.service.d/20-tailnet.conf").read_text()
+        families = [line.partition("=")[2] for line in contents.splitlines()
+                    if line.startswith("RestrictAddressFamilies=")]
+        self.assertEqual(families, ["AF_NETLINK"])
+        # Extend the base allowlist without resetting it or granting capabilities.
+        self.assertNotIn("CapabilityBoundingSet=", contents)
+        self.assertNotIn("AmbientCapabilities=", contents)
+        self.assertEqual(HARDENING["RestrictAddressFamilies"], "AF_UNIX AF_INET AF_INET6")
 
     def test_environment_examples_have_one_safe_argument_assignment(self):
         dashboard = parse_single_assignment(ROOT / "riglight.env.example", "RIGLIGHT_ARGS")
