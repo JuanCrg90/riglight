@@ -192,6 +192,66 @@ func TestFollowLoadedExpiresBeforeQueuedLine(t *testing.T) {
 	}
 }
 
+func TestFollowLoadedLineRechecksFreshnessAfterReceive(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	clock := &followTestClock{now: at}
+	initial := availableLoaded(t, at, llamaswap.ModeLive, "alpha")
+	hub, err := llamaswap.NewHub(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	created := make(chan *followReader, 1)
+	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{Hub: hub, Mode: ModeLive, Now: clock.Now, NewReader: func(string, *InputBudget) (Provider, error) {
+		reader := newFollowReader()
+		created <- reader
+		return reader, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := &followTestLatest{sample: initial}
+	checked := make(chan struct{}, 1)
+	var hookMu sync.Mutex
+	checksUntilSignal := 0
+	provider.latest = func() llamaswap.Sample {
+		sample := latest.Sample()
+		hookMu.Lock()
+		if checksUntilSignal > 0 {
+			checksUntilSignal--
+			if checksUntilSignal == 0 {
+				checked <- struct{}{}
+			}
+		}
+		hookMu.Unlock()
+		return sample
+	}
+	events := make(chan string, 3)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		_ = provider.StreamWithTarget(ctx, func() error { return nil }, func(target Target) error { events <- string(target.State); return nil }, func(_ Stream, text string, _ bool) error { events <- text; return nil })
+	}()
+	if event := <-events; event != string(TargetFollowing) {
+		t.Fatalf("initial event = %q", event)
+	}
+	reader := <-created
+	<-reader.started
+	hookMu.Lock()
+	// apply reads latest once; the second read is the line-select precheck.
+	checksUntilSignal = 2
+	hookMu.Unlock()
+	if err := hub.Publish(initial); err != nil {
+		t.Fatal(err)
+	}
+	<-checked // The pre-select freshness check has returned while still fresh.
+	clock.Set(at.Add(6 * time.Second))
+	reader.lines <- "stale line"
+	if event := <-events; event != string(TargetUnavailable) {
+		t.Fatalf("stale line crossed post-receive check: %q", event)
+	}
+}
+
 func TestFollowLoadedExpiryUsesNewestSampleWithoutReopening(t *testing.T) {
 	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &followTestClock{now: at}
@@ -440,7 +500,7 @@ func (r *chargedFollowReader) Stream(ctx context.Context, ready func() error, _ 
 	return ctx.Err()
 }
 
-func TestFollowLoadedSharesRawBudgetAcrossTargetChanges(t *testing.T) {
+func TestFollowLoadedRawBudgetEndsOnCoincidentNoTarget(t *testing.T) {
 	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &followTestClock{now: at}
 	hub, err := llamaswap.NewHub(availableLoaded(t, at, llamaswap.ModeLive, "alpha"))
@@ -471,7 +531,7 @@ func TestFollowLoadedSharesRawBudgetAcrossTargetChanges(t *testing.T) {
 	alphaReader := <-created
 	<-alphaReader.started
 	clock.Set(at.Add(time.Second))
-	if err := hub.Publish(availableLoaded(t, at.Add(time.Second), llamaswap.ModeLive, "bravo")); err != nil {
+	if err := hub.Publish(availableLoaded(t, at.Add(time.Second), llamaswap.ModeLive)); err != nil {
 		t.Fatal(err)
 	}
 	select {

@@ -167,6 +167,12 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 	}()
 
 	apply := func(sample llamaswap.Sample) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Subscription updates are notifications; the hub's immutable latest
+		// copy is the only source-selection decision input.
+		sample = p.latest()
 		selection, remaining := p.selectTarget(sample)
 		stopTimer()
 		if remaining > 0 {
@@ -182,6 +188,12 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 		// A cancellation caused by a target transition is expected. Its reader
 		// result is intentionally discarded before the new target is announced.
 		_ = stopReader()
+		// BudgetReader holds its mutex only while a child performs Read. Joining
+		// above makes this check safe and makes the raw cap terminal regardless
+		// of the replacement target state.
+		if budget.Exhausted() {
+			return ErrByteLimit
+		}
 		selection.Revision = 1
 		if hasPrevious {
 			selection.Revision = previous.Revision + 1
@@ -189,22 +201,51 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 		if selection.Revision > maxSafeRevision {
 			return ErrInvalid
 		}
-		if selection.State == TargetFollowing && budget.Exhausted() {
-			return ErrByteLimit
-		}
 		if err := targetEmit(selection); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		previous, hasPrevious = selection, true
 		if selection.State != TargetFollowing {
 			return nil
 		}
+		// A target callback can block on the bounded SSE writer. Reconcile once
+		// more before opening a model reader so an expired/replaced target never
+		// causes a stale upstream request.
+		current := p.latest()
+		currentSelection, _ := p.selectTarget(current)
+		if !sameTarget(selection, currentSelection) {
+			// Hub publication queues the newer immutable sample before exposing it
+			// through Latest. The next loop applies that pending transition without
+			// opening a reader for the obsolete target.
+			return nil
+		}
 		reader, err := p.newReader(*selection.Model, budget)
 		if err != nil {
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		active = startFollowLoadedReader(ctx, reader)
 		return nil
+	}
+
+	emitLine := func(line followLoadedLine) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current := p.latest()
+		selection, _ := p.selectTarget(current)
+		if !sameTarget(previous, selection) {
+			return apply(current)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return emit(line.stream, line.text, line.truncated)
 	}
 
 	for {
@@ -245,7 +286,7 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 		if active != nil && active.finished {
 			select {
 			case line := <-active.lines:
-				if err := emit(line.stream, line.text, line.truncated); err != nil {
+				if err := emitLine(line); err != nil {
 					return err
 				}
 				continue
@@ -272,7 +313,7 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 				return err
 			}
 		case line := <-lines:
-			if err := emit(line.stream, line.text, line.truncated); err != nil {
+			if err := emitLine(line); err != nil {
 				return err
 			}
 		case err := <-done:
