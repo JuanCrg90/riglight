@@ -13,6 +13,7 @@ const modelsBaseURL = 'http://127.0.0.1:19092';
 const containersBaseURL = 'http://127.0.0.1:19093';
 const systemBaseURL = 'http://127.0.0.1:19094';
 const logsBaseURL = 'http://127.0.0.1:19095';
+const loadedLogsBaseURL = 'http://127.0.0.1:19096';
 
 export default defineConfig({
   testDir: './e2e',
@@ -22,8 +23,8 @@ export default defineConfig({
   reporter: 'list',
   use: { baseURL, trace: 'off', screenshot: 'off', video: 'off' },
   projects: [
-    { name: 'chromium', testIgnore: ['**/gpu.spec.ts', '**/models.spec.ts', '**/containers.spec.ts', '**/system.spec.ts', '**/logs.spec.ts'], use: { ...devices['Desktop Chrome'] } },
-    { name: 'webkit', testIgnore: ['**/gpu.spec.ts', '**/models.spec.ts', '**/containers.spec.ts', '**/system.spec.ts', '**/logs.spec.ts'], use: { ...devices['Desktop Safari'] } },
+    { name: 'chromium', testIgnore: ['**/gpu.spec.ts', '**/models.spec.ts', '**/containers.spec.ts', '**/system.spec.ts', '**/logs.spec.ts', '**/loaded-logs.spec.ts'], use: { ...devices['Desktop Chrome'] } },
+    { name: 'webkit', testIgnore: ['**/gpu.spec.ts', '**/models.spec.ts', '**/containers.spec.ts', '**/system.spec.ts', '**/logs.spec.ts', '**/loaded-logs.spec.ts'], use: { ...devices['Desktop Safari'] } },
     { name: 'chromium-gpu', testMatch: '**/gpu.spec.ts', use: { ...devices['Desktop Chrome'], baseURL: gpuBaseURL } },
     { name: 'webkit-gpu', testMatch: '**/gpu.spec.ts', use: { ...devices['Desktop Safari'], baseURL: gpuBaseURL } },
     { name: 'chromium-models', testMatch: '**/models.spec.ts', workers: 2, use: { ...devices['Desktop Chrome'], baseURL: modelsBaseURL } },
@@ -33,6 +34,7 @@ export default defineConfig({
     { name: 'chromium-system', testMatch: '**/system.spec.ts', workers: 2, use: { ...devices['Desktop Chrome'], baseURL: systemBaseURL } },
     { name: 'webkit-system', testMatch: '**/system.spec.ts', workers: 2, use: { ...devices['Desktop Safari'], baseURL: systemBaseURL } },
     { name: 'chromium-logs', testMatch: '**/logs.spec.ts', workers: 2, use: { ...devices['Desktop Chrome'], baseURL: logsBaseURL } },
+    { name: 'chromium-loaded-logs', testMatch: '**/loaded-logs.spec.ts', workers: 2, use: { ...devices['Desktop Chrome'], baseURL: loadedLogsBaseURL } },
   ],
   webServer: [
     {
@@ -74,6 +76,13 @@ export default defineConfig({
       command: `"${binary}" --demo --gpu --llama-swap --docker --system-details --logs --listen 127.0.0.1:19095`,
       cwd: repositoryRoot,
       url: logsBaseURL,
+      timeout: 30_000,
+      reuseExistingServer: false,
+    },
+    {
+      command: `"${binary}" --demo --gpu --llama-swap --docker --system-details --logs --log-loaded-model --listen 127.0.0.1:19096`,
+      cwd: repositoryRoot,
+      url: loadedLogsBaseURL,
       timeout: 30_000,
       reuseExistingServer: false,
     },
