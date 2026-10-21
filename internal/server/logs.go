@@ -76,7 +76,9 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 	if err := writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: catalog.Mode, SourceID: id, State: logs.StateOpening}); err != nil {
 		return
 	}
-	sequence, ready := int64(0), false
+	sequence, targetRevision, ready := int64(0), int64(0), false
+	var previousTarget logs.Target
+	hasTarget := false
 	readyStream := func() error {
 		if ready {
 			return logs.ErrInvalid
@@ -96,10 +98,14 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 	}
 	if targetProvider, ok := provider.(logs.TargetProvider); ok {
 		err = targetProvider.StreamWithTarget(streamContext, readyStream, func(target logs.Target) error {
-			if source.Kind != logs.KindLoadedModel || target.Validate() != nil || target.Mode != catalog.Mode || target.SourceID != id {
+			if source.Kind != logs.KindLoadedModel || target.Validate() != nil || target.Mode != catalog.Mode || target.SourceID != id || (hasTarget && (target.Revision <= targetRevision || sameLogTarget(previousTarget, target))) {
 				return logs.ErrInvalid
 			}
-			return writeLogTarget(w, target)
+			if err := writeLogTarget(w, target); err != nil {
+				return err
+			}
+			previousTarget, targetRevision, hasTarget = target, target.Revision, true
+			return nil
 		}, emitLine)
 	} else {
 		err = provider.Stream(streamContext, readyStream, emitLine)
@@ -138,6 +144,13 @@ func catalogSource(catalog logs.Catalog, id string) (logs.Source, bool) {
 	}
 	return logs.Source{}, false
 }
+func sameLogTarget(left, right logs.Target) bool {
+	if left.State != right.State || left.Model == nil || right.Model == nil {
+		return left.State == right.State && left.Model == nil && right.Model == nil
+	}
+	return *left.Model == *right.Model
+}
+
 func writeLogStatus(w http.ResponseWriter, value logs.Status) error {
 	return writeLogFrame(w, "log-status", value)
 }
