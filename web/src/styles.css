@@ -86,6 +86,16 @@ h1 { font-size: clamp(25px, 4vw, 34px); letter-spacing: -.045em; font-weight: 50
 .container-readings > div { min-width: 0; }
 .container-readings span, .container-readings small { display: block; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .container-readings strong { display: block; margin: 5px 0 3px; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.logs-open, .logs-controls button, .logs-confirm button { border: 1px solid #52766f; background: var(--surface); color: #d8e1dd; padding: 9px 12px; font: inherit; font-size: 11px; cursor: pointer; }
+.logs-warning, .logs-confirm, .logs-message { border-left: 2px solid var(--amber); background: var(--surface); padding: 12px 14px; color: #d8c99f; font-size: 11px; line-height: 1.6; }
+.logs-controls, .logs-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 12px 0; font-size: 10px; color: var(--muted); }
+.logs-controls label, .logs-tools label { display: flex; align-items: center; gap: 8px; }
+.logs-controls select, .logs-tools input[type="search"] { max-width: 100%; background: var(--surface); border: 1px solid var(--line); color: inherit; padding: 8px; font: inherit; }
+.logs-tools > span { margin-left: auto; text-transform: uppercase; }
+.logs-lines { height: 300px; overflow: auto; margin: 12px 0; padding: 8px; list-style: none; border: 1px solid var(--line); background: #0b1011; font-size: 11px; }
+.logs-lines li { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px solid #202a2c; }
+.logs-lines pre { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; color: #d8e1dd; }
+.log-stream { flex: 0 0 54px; color: var(--teal); font-size: 9px; }
 .footer-note { margin-top: 30px; font-size: 10px; color: var(--muted); }
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
 @media (max-width: 600px) {

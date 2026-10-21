@@ -2,6 +2,7 @@ import { Sparkline } from './Sparkline';
 import { GpuSection } from './GpuSection';
 import { ModelSection } from './ModelSection';
 import { ContainerSection } from './ContainerSection';
+import { LogSection } from './LogSection';
 import { SystemSection } from './SystemSection';
 import { useMetrics } from './useMetrics';
 
@@ -38,6 +39,7 @@ export function App() {
         <GpuSection overview={gpu} freshness={gpuFreshness} />
         <ModelSection overview={models} fresh={modelsFresh} />
         <ContainerSection overview={containers} freshness={containersFreshness} />
+        <LogSection />
         <p className="footer-note">Private by design <span>·</span> No history leaves this browser</p>
       </section>
     </main>
