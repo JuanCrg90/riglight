@@ -5,7 +5,8 @@
 Riglight is a private, read-only dashboard for Linux workstation CPU/RAM,
 optional NVIDIA GPU metrics, optional llama-swap inventory, selected Docker
 container monitoring through a separate filtering helper, and optional system
-detail (swap, root-filesystem capacity and selected-uplink traffic). It provides
+detail (swap, root-filesystem capacity and selected-uplink traffic), plus opt-in
+manual log viewers. It provides
 live browser updates and an explicit synthetic demo mode. It binds to loopback
 by default; it is not a remote shell or control plane.
 
@@ -20,9 +21,12 @@ Docker monitoring uses `--docker` with an explicit loopback `--docker-proxy-url`
 see [helper setup](docs/docker-access.md), [Docker specification](docs/spec-docker.md)
 and [tasks](tasks/docker-plan.md). Only explicitly selected aliases, state/health,
 restart counts and CPU/RAM are exposed. The dashboard gets no daemon socket or
-raw inspect data; helper deployment/permissions are not automated. Logs, controls,
-public ingress, authentication, persistence and service installation remain out
-of scope. See the [CPU/RAM specification](docs/spec.md),
+raw inspect data; helper deployment/permissions are not automated. Controls,
+public ingress, authentication, persistence and automatic service installation
+remain out of scope. Optional [log viewers](docs/log-viewers.md) are separately
+enabled with --logs and require explicit source configuration/manual opening;
+raw text can contain secrets/prompts/configuration and is not guaranteed redacted.
+Logs use the same admitted audience as the dashboard, not a separate login. See the [CPU/RAM specification](docs/spec.md),
 [GPU specification](docs/spec-gpu.md), [GPU implementation plan](tasks/gpu-plan.md),
 and [GPU task list](tasks/gpu-todo.md) for scope and project state.
 [CPU/RAM verification](docs/verification.md) and
@@ -96,7 +100,7 @@ performed.
 For a wholly synthetic combined view:
 
 ```sh
-./bin/riglight --demo --gpu --llama-swap --docker --system-details
+./bin/riglight --demo --gpu --llama-swap --docker --system-details --logs
 ```
 
 This does not start the filtering helper or contact Docker. Preparing/building the helper is separate from permission to run
@@ -110,6 +114,17 @@ repeatable `--network-interface` selections; no names/addresses/devices or mount
 paths are exposed. `--demo --system-details` needs no selection and never reads
 host counters. See [setup and meanings](docs/system-detail.md),
 [the contract](docs/spec-system.md) and [tasks](tasks/system-plan.md).
+
+## Optional ephemeral logs
+
+Use `--demo --logs` for three synthetic sources without reading actual logs.
+Live sources are separately configured llama-swap proxy diagnostics, selected
+model-server logs and the helper's selected containers (helper also needs --logs).
+Viewers open only on explicit action, keep bounded browser memory, and provide
+pause/resume, local filtering, follow-tail, clear and close—not persistence/export.
+Raw text may contain secrets and is visible to the existing admitted audience.
+See [setup and privacy](docs/log-viewers.md), [contract](docs/spec-logs.md) and
+[tasks](tasks/logs-plan.md). Building/testing does not activate live log access.
 
 ## Deployment preparation
 

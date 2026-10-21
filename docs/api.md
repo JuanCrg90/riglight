@@ -329,3 +329,71 @@ call can make system data stale, but cannot block other sources/HTTP or extend
 shared shutdown; no hard syscall-cancel guarantee. Existing Host/Origin/source
 admission, GET/input and no-store/security guards apply unchanged. See
 [system setup/meaning](system-detail.md) and [the exact contract](spec-system.md).
+
+## Explicit log inspector
+
+Logs are disabled by default and are NOT a sixth telemetry event or snapshot
+cache. --logs gates the catalog and separate manually opened SSE. Existing
+Host/Origin/source/interface admission applies to both, so all admitted dashboard
+readers can access enabled selected logs. **Raw text may contain secrets, prompts,
+paths and configuration; it is not guaranteed redacted.** Metric field-allowlist
+claims do not apply to text inside this explicit exception.
+
+GET /api/v1/log-sources returns exactly:
+
+```json
+{"schemaVersion":1,"mode":"DEMO","sources":[{"id":"llama.proxy","label":"Proxy diagnostics","kind":"LLAMA_PROXY"},{"id":"model.example-model","label":"example-model","kind":"MODEL"},{"id":"docker.example-api","label":"example-api","kind":"DOCKER"}]}
+```
+
+Mode is DISABLED|DEMO|LIVE; DISABLED has no sources. Catalogs are at most 16 KiB,
+33 unique sources, 80 ASCII bytes per ID and 128 UTF-8 bytes per label. IDs are
+llama.proxy, model.<configured-safe-alias> or docker.<configured-safe-alias>;
+kind must match the ID. No URL, socket, model reference or Docker ID is exposed.
+The helper catalog is internal loopback-only and has exactly schemaVersion:1,
+enabled:boolean, aliases:[configured-safe-alias] (at most 16). Helper --logs is
+independent opt-in; unavailable/disabled helpers cannot break other log sources.
+
+GET /api/v1/logs/<id> opens one additional manual EventSource, bounded separately
+from the eight metric streams. Unknown/malformed IDs are rejected, never used as
+arbitrary upstream paths. Catalog refresh precedes explicit Start/Resume. Reject
+non-GET, bodies/transfers, any query (including empty ?), Last-Event-ID and
+unexpected encoded paths. No replay IDs, automatic reconnect or persistent logs.
+The helper exposes the analogous fixed GET /api/v1/logs/<alias> only for its
+configured selections and rejects every Origin header, like its metric API.
+
+Named log and log-status events have exact required key sets:
+
+```json
+{"schemaVersion":1,"mode":"DEMO","sourceId":"model.example-model","seq":1,"text":"Synthetic example output","stream":"OUTPUT","truncated":false}
+```
+
+```json
+{"schemaVersion":1,"mode":"DEMO","sourceId":"model.example-model","state":"STREAMING","reasonCode":null}
+```
+
+Every frame binds its DEMO|LIVE mode and source to the selected catalog/session.
+Sequence is a positive safe integer, starting at 1 and strictly increasing per
+new session. Stream is OUTPUT|STDOUT|STDERR. Frames are at most 32 KiB and text at
+most 4096 UTF-8 bytes. Text is escaped plain content, never HTML, hyperlinks or
+terminal commands. Invalid UTF-8/control handling is not secret redaction.
+
+States OPENING/STREAMING require null reasonCode. ENDED uses EOF; LIMIT_REACHED
+uses SESSION_LIMIT|BYTE_LIMIT|LINE_LIMIT; UNAVAILABLE uses DISABLED|UNSUPPORTED|
+UPSTREAM_UNAVAILABLE|INVALID_RESPONSE|READ_FAILED. Terminal states close the
+connection. Unknown keys/types/reasons, source/mode mismatches and old sequences
+must not be rendered as valid output. Resume may repeat bounded upstream history;
+there is no catch-up promise or model/container readiness implication.
+
+Each process has two active log slots. Sessions are limited to five minutes,
+2 MiB raw input including framing/discarded data, and 4096 emitted lines. Each
+main/helper hop applies raw-body caps. Opening headers wait ten seconds; writes
+have one-second deadlines. Disconnect/pause/close/source-switch/shutdown cancel
+requests and release slots without blocking independent metric collection. The
+browser retains at most 200 lines AND 256 KiB UTF-8 text, clearing all log/filter
+state on close/unmount/source change. No download, persistence or export.
+
+Only fixed llama-swap proxy/explicit model log-stream GETs and helper-selected
+Docker v1.44 inspect/ID-bound logs are permitted. Combined/all-upstream/HTTP logs,
+/running, generic upstream events, discovery, inference and controls stay excluded.
+See [operator/privacy guide](log-viewers.md), [source/limit contract](spec-logs.md)
+and [tasks](../tasks/logs-plan.md). Implementation does not activate live logs.

@@ -18,12 +18,20 @@
   was separately approved and verified with existing access and private selection.
   Do not change its running helper/dashboard or daemon permissions/configuration
   without a new explicit request.
-- Owner approved deployment examples/documentation only; follow
-  docs/spec-deployment.md and tasks/deployment-plan.md. No service installation,
-  enablement, daemon-reload, account/group/permission changes, reboot or interruption
-  of current processes is authorized by that preparation task.
-- Public ingress, authentication, persistence, logs, controls and service
-  installation remain separate unapproved increments.
+- Deployment examples/documentation were followed by a separately approved
+  private installation with dedicated identities and helper-only new Docker access.
+  Both services are verified active/enabled; actual boot remains untested.
+  Do not change their units/configuration, access, permissions or running state
+  without a new explicit rollout request. No reboot is authorized.
+- Owner approved implementing optional log viewers; follow docs/spec-logs.md and
+  tasks/logs-plan.md. Audience matches current dashboard admission. Sources are
+  selected Docker containers, explicit model-server logs and llama-swap proxy
+  diagnostics only; no combined/all-upstream/HTTP-access channels. Raw log text
+  can contain secrets/prompts/configuration; warn, bound and render as plain text,
+  never promise reliable redaction. No persistence/export, real log verification
+  or live activation/service changes are authorized by implementation approval.
+- Public ingress, authentication, persistence and controls remain separate
+  unapproved increments.
 - Do not stop/restart the owner's running server. Verify new builds on separate
   test-owned loopback ports; do not inject synthetic stress/benchmark workloads.
   Routine project builds/tests and approved dependency downloads remain allowed.
@@ -57,7 +65,9 @@
 - Use the pinned toolchain: `mise exec -- <command>`.
 - Build frontend assets before Go builds/tests that embed them.
 - Run relevant tests, race checks, vet/format, frontend lint/typecheck, and builds.
-- Final checks include demo-mode Chromium/WebKit browser tests, dependency audits,
+- Final checks include demo-mode Chromium browser tests, dependency audits,
   secret scans, artifact privacy inspection, and a separate GPT code review.
+  Owner explicitly waived Safari/WebKit validation for the log increment; do not
+  claim compatibility or silently remove existing optional test projects.
 - Do not claim unavailable checks passed. Never bypass hooks or failed tests.
 - Report changed files, commit IDs, commands/results, assumptions, and blockers.

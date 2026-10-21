@@ -7,8 +7,9 @@ host, with optional NVIDIA GPU monitoring enabled only by `--gpu`. GPU output
 is limited to numeric device indices and allowlisted metrics; it does not query
 or expose device identifiers, process information, or controls. Optional
 llama-swap inventory is enabled separately by `--llama-swap` and exposes only
-validated aliases and reported coarse states. No inference, model controls,
-logs, commands, prompts/responses, request activity or configuration is read.
+validated aliases and reported coarse states. That inventory path reads no
+inference, controls, logs, commands, prompts/responses, request activity or
+configuration; separately enabled log text is the explicit exception below.
 Optional Docker monitoring requires a separate filtering helper and explicit
 container selection. It exposes only configured aliases, coarse state/health,
 restart counts and CPU/RAM, not raw Docker responses or a daemon socket.
@@ -50,8 +51,8 @@ separate terminal on its configured loopback port; `--dev` only permits that
 origin and does not start the frontend server.
 
 llama-swap collection is disabled by default. The operator selects a literal
-loopback URL; browsers cannot choose it. Only the fixed GET `/v1/models` path
-is used, with bounded response headers/body, a two-second request deadline,
+loopback URL; browsers cannot choose it. Inventory uses only fixed GET
+`/v1/models`, with bounded response headers/body, a two-second request deadline,
 no redirects/environment proxies, and normal TLS verification. `/running` and
 the general upstream event stream are deliberately excluded because they expose
 command metadata and request activity. Unknown response fields are discarded;
@@ -66,8 +67,8 @@ as untrusted text, not HTML/links/commands; no persistence or export is provided
 Docker collection is disabled by default; live --docker requires an explicit
 literal-loopback --docker-proxy-url. Disabled/demo never construct its live
 source. A separate riglight-docker-proxy executable is the only component with
-separately provisioned Unix-socket access. It pins two GET operations per selected
-container, validates reference/ID binding and projects away environment, commands,
+separately provisioned Unix-socket access. Metric polling pins two GET operations
+per selected container, validates reference/ID binding and projects away environment, commands,
 mounts, labels, images, identities and healthcheck output. It necessarily receives
 inspect responses transiently; it must never expose/store/log their raw contents.
 A GET-only raw proxy or read-only socket mount is not an equivalent safeguard.
@@ -81,8 +82,41 @@ local processes can read selected aliases/metrics. The dashboard's admitted
 remote readers can see them too. Only explicit operator configuration selects
 containers; browsers cannot choose references, URLs, daemon paths or operations.
 Both boundaries enforce deadlines/body/header limits, generic errors, monotonic
-sample age and no persistence/export. No logs/events/control endpoints are used.
+sample age and no persistence/export. Metric polling uses no logs/events/control
+endpoints. Separately opted-in logs add only the selected GET described below.
 Live daemon compatibility/deployment requires separate verification and consent.
+
+## Explicit log-content exception
+
+Optional --logs viewers are manual, ephemeral and disabled by default. Source
+choices are configured llama-swap proxy diagnostics, explicit model-server logs,
+and the Docker helper's configured selections (helper also requires --logs).
+Combined/all-upstream/HTTP-access channels, inference, /running, daemon discovery,
+configuration endpoints and controls remain excluded. The main executable never
+receives the daemon socket. The helper's required inspect TTY boolean and full
+ID are internal parser/identity inputs, never exposed configuration metadata.
+
+**Raw selected log text can contain credentials, prompts/responses, commands,
+addresses, paths and configuration. There is no guaranteed redaction.** Existing
+metric DTO field-allowlisting does not apply to arbitrary text embedded in logs.
+The operator explicitly chose the same admitted audience as the dashboard;
+--allow-all-tailnet can therefore expose enabled logs to other permitted members'
+devices. No new authentication/log-only access boundary is claimed. Reassess
+this choice before enabling logs; the browser warning is not authorization.
+
+Log connections use separate bounded slots, fixed configured upstream paths,
+raw-input/line/frame/time caps, write deadlines and cancellation. Closed viewers
+collect nothing. Pause disconnects; source changes/close discard retained state.
+There is no automatic log retry, persistence or export. Content is escaped plain
+text, never executable markup, hyperlinks or terminal commands. Mode/source/
+sequence binding and bounded client buffers limit stale/cross-session confusion.
+These controls do not make sensitive log content safe to publish or share.
+
+No actual log content may enter application diagnostics, metric SSE/caches,
+journals, test artifacts, screenshots, Git or public reports. Verify with synthetic
+HTTP/Unix fixtures only; real source selection/activation and service changes
+require a separate rollout decision. See [log boundary](docs/log-viewers.md) and
+[contract](docs/spec-logs.md).
 
 System detail is separately enabled with --system-details and explicit live
 --network-interface selections. It projects only swap bytes, root-filesystem
