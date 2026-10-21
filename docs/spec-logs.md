@@ -65,24 +65,38 @@ no separate log-only allowlist or authorization bypass is introduced.
 ## Protocol and bounded transport
 
 - GET /api/v1/log-sources returns schemaVersion:1, mode:DISABLED|DEMO|LIVE, and
-  sources:[{id,label,kind}], with kinds LLAMA_PROXY|MODEL|DOCKER. Optional source
+  sources:[{id,label,kind}], with kinds LLAMA_PROXY|MODEL|DOCKER. Demo --logs
+  supplies deterministic sources llama.proxy, model.example-model and
+  docker.example-api without live clients; unrelated metric flags are not needed
+  to read synthetic demo logs. Optional source
   failure cannot break the other catalog entries or existing metrics.
 - GET /api/v1/logs/<id> opens a separate manual SSE; never multiplex log text into
   the shared metric hub, caches, journal, telemetry frames or error output.
 - Reject non-GET, bodies/transfers, any query including empty ?, unconfigured
   sources, Last-Event-ID and unexpected path encoding. No replay IDs emitted.
-- named log events: {schemaVersion:1,sourceId,seq,text,stream,truncated}; seq starts
+- named log events: {schemaVersion:1,mode:DEMO|LIVE,sourceId,seq,text,stream,truncated}; seq starts
   at 1 for each new session and grows; stream is OUTPUT|STDOUT|STDERR.
-- named log-status events: {schemaVersion:1,sourceId,state,reasonCode}; state is
+- named log-status events: {schemaVersion:1,mode:DEMO|LIVE,sourceId,state,reasonCode}; state is
   OPENING|STREAMING|ENDED|UNAVAILABLE|LIMIT_REACHED. reasonCode is null or one of
   DISABLED|UNSUPPORTED|UPSTREAM_UNAVAILABLE|INVALID_RESPONSE|READ_FAILED|EOF|
   SESSION_LIMIT|BYTE_LIMIT|LINE_LIMIT, never a raw error/URL/configuration. Terminal states
-  must close the browser connection. Source/session binding is strict.
+  must close the browser connection. Source/session/catalog-mode binding is
+  strict; mismatched modes/sources close the viewer without showing text.
+  OPENING/STREAMING require null reason; ENDED requires EOF; LIMIT_REACHED
+  requires SESSION_LIMIT/BYTE_LIMIT/LINE_LIMIT; UNAVAILABLE uses the other reasons.
+  Refresh the catalog before each explicit Start/Resume; never auto-attach a
+  different source or mode. Catalog IDs and labels are bounded safe strings:
+  IDs at most 80 ASCII bytes, labels at most 128 UTF-8 bytes; catalogs are at most
+  16 KiB and 33 unique sources (proxy + 16 models + 16 Docker aliases). Reject
+  larger/duplicate catalogs before retaining entries.
 - Two active sessions globally per dashboard and separately per helper, plus a
   single browser inspector session; slots acquired before upstream activity,
   released on EOF/error/disconnect/timeout. Overload returns 429 without I/O.
 - Each session has a five-minute lifetime, 2 MiB input budget and 4096 emitted
-  lines maximum. Wire frames are at most 32 KiB; browser preparse caps apply too.
+  lines maximum. The input budget counts RAW upstream HTTP response-body bytes
+  before parsing/decoding/control removal/truncation, including Docker's eight-byte
+  frame headers. Apply the same raw-body ceiling on each main/helper HTTP hop;
+  SSE framing/JSON bytes count too. Wire frames are at most 32 KiB; browser preparse caps apply too.
   Sequence numbers are positive safe integers. Fixed bounded
   read buffers, bounded protocol frames and lines, and one-second downstream write
   deadlines prevent slow clients/giant lines from blocking workers or shutdown.
@@ -109,7 +123,8 @@ Installed API compatibility remains a later private verification, not assumed.
 Docker helper retains pinned v1.44 operations and adds ONLY selected inspect
 identity/TTY projection and GET /v1.44/containers/<validated-full-id>/logs with
 fixed stdout=1,stderr=1,follow=1,tail=200,timestamps=0 (no details/config/logfile).
-Resolve only an exact configured selection; validate returned full ID and use it
+Resolve only an exact configured selection; require a returned ID of exactly
+64 lowercase hexadecimal characters (0-9,a-f), reject anything else, and use it
 for logs, never browser input. Required TTY boolean is internal-only: framed
 stdout/stderr are parsed by Docker's eight-byte multiplex protocol, TTY is plain
 output. Malformed headers, unexpected streams, oversized/truncated frames and
