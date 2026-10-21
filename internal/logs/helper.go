@@ -39,13 +39,14 @@ func (h *HelperDockerCatalog) catalog(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, ErrInvalid
 	}
-	response, err := h.client.Do(request)
+	response, finish, err := OpenHTTP(ctx, h.client, request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, ErrUnavailable
 	}
+	defer finish()
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, ErrUnavailable
@@ -153,13 +154,14 @@ func (p *helperDockerProvider) Stream(ctx context.Context, ready func() error, e
 	if err != nil {
 		return ErrInvalid
 	}
-	response, err := p.helper.client.Do(request)
+	response, finish, err := OpenHTTP(ctx, p.helper.client, request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return ErrUnavailable
 	}
+	defer finish()
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
 		return ErrInvalid

@@ -67,10 +67,11 @@ type logInspect struct {
 
 func (p *LogProvider) inspect(ctx context.Context, target Target) (logInspect, error) {
 	var inspect logInspect
-	response, err := p.get(ctx, "/v1.44/containers/"+target.Reference+"/json")
+	response, finish, err := p.get(ctx, "/v1.44/containers/"+target.Reference+"/json")
 	if err != nil {
 		return inspect, err
 	}
+	defer finish()
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound {
 		return inspect, logs.ErrUnavailable
@@ -106,13 +107,14 @@ func (p *LogProvider) stream(ctx context.Context, inspect logInspect, ready func
 	if err != nil {
 		return logs.ErrInvalid
 	}
-	response, err := p.client.Do(request)
+	response, finish, err := logs.OpenHTTP(ctx, p.client, request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return logs.ErrUnavailable
 	}
+	defer finish()
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed || response.StatusCode == http.StatusNotImplemented {
 		return logs.ErrUnsupported
@@ -129,19 +131,19 @@ func dockerContentType(value string) bool {
 	media, _, err := mime.ParseMediaType(value)
 	return err == nil && (media == "application/vnd.docker.raw-stream" || media == "application/octet-stream")
 }
-func (p *LogProvider) get(ctx context.Context, path string) (*http.Response, error) {
+func (p *LogProvider) get(ctx context.Context, path string) (*http.Response, func(), error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker"+path, nil)
 	if err != nil {
-		return nil, logs.ErrInvalid
+		return nil, func() {}, logs.ErrInvalid
 	}
-	response, err := p.client.Do(request)
+	response, finish, err := logs.OpenHTTP(ctx, p.client, request)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, func() {}, ctx.Err()
 		}
-		return nil, logs.ErrUnavailable
+		return nil, func() {}, logs.ErrUnavailable
 	}
-	return response, nil
+	return response, finish, nil
 }
 
 const maxInspectBytes = 64 << 10

@@ -13,6 +13,8 @@ import (
 
 const maxHeaderBytes = 8 << 10
 
+var openingTimeout = 10 * time.Second
+
 // CanonicalBaseURL accepts exactly one literal loopback origin, with no path,
 // credentials, query, fragment, hostname, or proxy behavior.
 func CanonicalBaseURL(raw string) (string, error) {
@@ -40,16 +42,42 @@ func newHTTPClient(dial func(context.Context, string, string) (net.Conn, error))
 		Proxy:                  nil,
 		DisableCompression:     true,
 		MaxResponseHeaderBytes: maxHeaderBytes,
-		ResponseHeaderTimeout:  10 * time.Second,
+		ResponseHeaderTimeout:  openingTimeout,
+		TLSHandshakeTimeout:    openingTimeout,
 		DialContext:            dial,
 	}
 	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 
+// OpenHTTP enforces one absolute opening deadline for dialing, TLS, and
+// response headers. Its returned finish function must run after Body.Close;
+// stopping the timer leaves a successfully opened stream bound only to ctx.
+func OpenHTTP(ctx context.Context, client *http.Client, request *http.Request) (*http.Response, func(), error) {
+	opening, cancel := context.WithCancel(ctx)
+	timer := time.AfterFunc(openingTimeout, cancel)
+	response, err := client.Do(request.WithContext(opening))
+	stopped := timer.Stop()
+	timedOut := !stopped && ctx.Err() == nil
+	if err != nil || timedOut || opening.Err() != nil {
+		cancel()
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		if timedOut {
+			return nil, func() {}, context.DeadlineExceeded
+		}
+		if err != nil {
+			return nil, func() {}, err
+		}
+		return nil, func() {}, context.Canceled
+	}
+	return response, cancel, nil
+}
+
 // NewUnixHTTPClient creates a proxy-free client restricted by a caller-owned
 // Unix-socket dialer. It is used only by the privileged helper package.
 func NewUnixHTTPClient(socket string) *http.Client {
-	dialer := &net.Dialer{}
+	dialer := &net.Dialer{Timeout: openingTimeout}
 	return newHTTPClient(func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return dialer.DialContext(ctx, "unix", socket)
 	})
@@ -61,7 +89,8 @@ type PlainHTTPProvider struct {
 }
 
 func NewPlainHTTPProvider(endpoint string) *PlainHTTPProvider {
-	return &PlainHTTPProvider{endpoint: endpoint, client: newHTTPClient((&net.Dialer{}).DialContext)}
+	dialer := &net.Dialer{Timeout: openingTimeout}
+	return &PlainHTTPProvider{endpoint: endpoint, client: newHTTPClient(dialer.DialContext)}
 }
 
 func (p *PlainHTTPProvider) CloseIdleConnections() { p.client.CloseIdleConnections() }
@@ -70,13 +99,14 @@ func (p *PlainHTTPProvider) Stream(ctx context.Context, ready func() error, emit
 	if err != nil {
 		return ErrInvalid
 	}
-	response, err := p.client.Do(request)
+	response, finish, err := OpenHTTP(ctx, p.client, request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return ErrUnavailable
 	}
+	defer finish()
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed || response.StatusCode == http.StatusNotImplemented {
 		return ErrUnsupported

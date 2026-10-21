@@ -97,6 +97,9 @@ func writeLogFrame(w http.ResponseWriter, event string, value any) error {
 		return logs.ErrInvalid
 	}
 	frame := fmt.Sprintf("event: %s\ndata: %s\n\n", event, body)
+	if len(frame) > logs.MaxWireBytes {
+		return logs.ErrInvalid
+	}
 	controller := http.NewResponseController(w)
 	if err := controller.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
 		return err

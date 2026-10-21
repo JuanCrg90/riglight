@@ -29,9 +29,16 @@ func (p *testLogProvider) Stream(ctx context.Context, ready func() error, emit l
 	return nil
 }
 
+func TestLogFramesIncludeSSEEnvelopeInWireLimit(t *testing.T) {
+	recorder := sseRecorder{ResponseRecorder: httptest.NewRecorder()}
+	if err := writeLogFrame(&recorder, "log", map[string]string{"text": strings.Repeat("x", logs.MaxWireBytes)}); err == nil {
+		t.Fatal("oversized frame accepted")
+	}
+}
+
 func TestLogRoutesAreManualBoundedAndStrict(t *testing.T) {
 	provider := &testLogProvider{}
-	registry, err := logs.NewRegistry(logs.ModeDemo, []logs.Entry{{Source: logs.Source{ID: "model.demo", Label: "Demo", Kind: logs.KindModel}, Provider: provider}})
+	registry, err := logs.NewRegistry(logs.ModeLive, []logs.Entry{{Source: logs.Source{ID: "model.demo", Label: "Demo", Kind: logs.KindModel}, Provider: provider}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +46,7 @@ func TestLogRoutesAreManualBoundedAndStrict(t *testing.T) {
 	catalog := allowedRequest(http.MethodGet, "/api/v1/log-sources")
 	catalogResponse := httptest.NewRecorder()
 	server.ServeHTTP(catalogResponse, catalog)
-	if catalogResponse.Code != http.StatusOK || !strings.Contains(catalogResponse.Body.String(), `"mode":"DEMO"`) {
+	if catalogResponse.Code != http.StatusOK || !strings.Contains(catalogResponse.Body.String(), `"mode":"LIVE"`) {
 		t.Fatalf("catalog = %d %s", catalogResponse.Code, catalogResponse.Body.String())
 	}
 	for _, request := range []*http.Request{

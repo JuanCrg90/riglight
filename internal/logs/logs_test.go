@@ -38,6 +38,17 @@ func TestConsumePlainCountsRawBodyBeforeNormalization(t *testing.T) {
 	}
 }
 
+func TestRegistryEmptyCatalogUsesAnEmptyArray(t *testing.T) {
+	registry, err := NewRegistry(ModeLive, []Entry{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := registry.Catalog(context.Background())
+	if err != nil || catalog.Sources == nil || len(catalog.Sources) != 0 || ValidateCatalog(catalog) != nil {
+		t.Fatalf("catalog = %#v, %v", catalog, err)
+	}
+}
+
 func TestValidateCatalogRejectsDuplicatesAndOversizeValues(t *testing.T) {
 	valid := Catalog{SchemaVersion: SchemaVersion, Mode: ModeLive, Sources: []Source{{ID: "model.alpha", Label: "Alpha", Kind: KindModel}}}
 	if err := ValidateCatalog(valid); err != nil {
@@ -49,6 +60,17 @@ func TestValidateCatalogRejectsDuplicatesAndOversizeValues(t *testing.T) {
 	}
 	if ValidModelReference("proxy") || ValidModelReference("author/model") || !ValidModelReference("model-1") {
 		t.Fatal("model reference policy")
+	}
+	for _, catalog := range []Catalog{
+		{SchemaVersion: SchemaVersion, Mode: ModeDisabled, Sources: []Source{{ID: "model.alpha", Label: "Alpha", Kind: KindModel}}},
+		{SchemaVersion: SchemaVersion, Mode: ModeLive, Sources: []Source{{ID: "model.alpha", Label: "bad\nlabel", Kind: KindModel}}},
+		{SchemaVersion: SchemaVersion, Mode: ModeLive, Sources: []Source{{ID: "model.alpha", Label: "Alpha", Kind: KindDocker}}},
+		{SchemaVersion: SchemaVersion, Mode: ModeLive, Sources: []Source{{ID: "llama.other", Label: "Proxy", Kind: KindLlamaProxy}}},
+		{SchemaVersion: SchemaVersion, Mode: ModeDemo, Sources: []Source{{ID: "llama.proxy", Label: "Proxy", Kind: KindLlamaProxy}}},
+	} {
+		if !errors.Is(ValidateCatalog(catalog), ErrInvalid) {
+			t.Errorf("catalog accepted: %#v", catalog)
+		}
 	}
 }
 

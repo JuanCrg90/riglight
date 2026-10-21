@@ -156,7 +156,9 @@ func NewRegistry(mode Mode, entries []Entry) (*Registry, error) {
 }
 
 func (r *Registry) Catalog(context.Context) (Catalog, error) {
-	return Catalog{SchemaVersion: SchemaVersion, Mode: r.mode, Sources: append([]Source(nil), r.sources...)}, nil
+	sources := make([]Source, len(r.sources))
+	copy(sources, r.sources)
+	return Catalog{SchemaVersion: SchemaVersion, Mode: r.mode, Sources: sources}, nil
 }
 func (r *Registry) Provider(_ context.Context, id string) (Provider, error) {
 	provider, ok := r.providers[id]
@@ -167,25 +169,69 @@ func (r *Registry) Provider(_ context.Context, id string) (Provider, error) {
 }
 
 func ValidateCatalog(c Catalog) error {
-	if c.SchemaVersion != SchemaVersion || (c.Mode != ModeDisabled && c.Mode != ModeDemo && c.Mode != ModeLive) || c.Sources == nil || len(c.Sources) > MaxSources {
+	if c.SchemaVersion != SchemaVersion || (c.Mode != ModeDisabled && c.Mode != ModeDemo && c.Mode != ModeLive) || c.Sources == nil || len(c.Sources) > MaxSources || (c.Mode == ModeDisabled && len(c.Sources) != 0) {
 		return ErrInvalid
 	}
 	seen := make(map[string]struct{}, len(c.Sources))
-	total := 0
+	proxyCount, modelCount, dockerCount, total := 0, 0, 0, 0
 	for _, source := range c.Sources {
-		if !validID(source.ID) || !utf8.ValidString(source.Label) || len(source.Label) == 0 || len(source.Label) > MaxLabelBytes || (source.Kind != KindLlamaProxy && source.Kind != KindModel && source.Kind != KindDocker) {
+		if !validID(source.ID) || !safeLabel(source.Label) {
 			return ErrInvalid
 		}
 		if _, exists := seen[source.ID]; exists {
 			return ErrInvalid
 		}
 		seen[source.ID] = struct{}{}
+		switch source.Kind {
+		case KindLlamaProxy:
+			if source.ID != "llama.proxy" {
+				return ErrInvalid
+			}
+			proxyCount++
+		case KindModel:
+			if !validSourceAlias(source.ID, "model.") {
+				return ErrInvalid
+			}
+			modelCount++
+		case KindDocker:
+			if !validSourceAlias(source.ID, "docker.") {
+				return ErrInvalid
+			}
+			dockerCount++
+		default:
+			return ErrInvalid
+		}
 		total += len(source.ID) + len(source.Label) + len(source.Kind) + 32
 	}
-	if total > MaxCatalogBytes {
+	if proxyCount > 1 || modelCount > MaxConfiguredItems || dockerCount > MaxConfiguredItems || total > MaxCatalogBytes || (c.Mode == ModeDemo && !validDemoCatalog(c.Sources)) {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func safeLabel(label string) bool {
+	if len(label) == 0 || len(label) > MaxLabelBytes || !utf8.ValidString(label) {
+		return false
+	}
+	for _, value := range label {
+		if (value >= 0 && value < 0x20) || (value >= 0x7f && value <= 0x9f) {
+			return false
+		}
+	}
+	return true
+}
+func validSourceAlias(id, prefix string) bool {
+	return strings.HasPrefix(id, prefix) && ValidAlias(strings.TrimPrefix(id, prefix))
+}
+func validDemoCatalog(sources []Source) bool {
+	if len(sources) != 3 {
+		return false
+	}
+	kinds := map[string]Kind{}
+	for _, source := range sources {
+		kinds[source.ID] = source.Kind
+	}
+	return kinds["llama.proxy"] == KindLlamaProxy && kinds["model.example-model"] == KindModel && kinds["docker.example-api"] == KindDocker
 }
 
 func validID(id string) bool {
