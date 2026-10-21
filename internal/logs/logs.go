@@ -324,6 +324,12 @@ type InputBudget struct {
 
 func NewInputBudget() *InputBudget { return &InputBudget{left: MaxInputBytes} }
 
+func (b *InputBudget) Exhausted() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.exhausted || b.left == 0
+}
+
 // BudgetReader counts body bytes before any protocol framing or normalization.
 type BudgetReader struct {
 	reader io.Reader

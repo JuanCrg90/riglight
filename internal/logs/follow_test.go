@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"sync"
 	"testing"
 	"time"
@@ -62,6 +61,15 @@ func (r *followReader) Stream(ctx context.Context, ready func() error, emit Emit
 	}
 }
 
+type finiteFollowReader struct{}
+
+func (finiteFollowReader) Stream(_ context.Context, ready func() error, emit Emit) error {
+	if err := ready(); err != nil {
+		return err
+	}
+	return emit(StreamOutput, "final line", false)
+}
+
 func availableLoaded(t *testing.T, at time.Time, mode llamaswap.Mode, ids ...string) llamaswap.Sample {
 	t.Helper()
 	models := make([]llamaswap.Model, len(ids))
@@ -94,6 +102,127 @@ func TestTargetUsesExactBoundedContract(t *testing.T) {
 		if invalid.Validate() == nil {
 			t.Fatalf("accepted target %#v", invalid)
 		}
+	}
+}
+
+func TestFollowLoadedDrainsFiniteReaderLinesBeforeEOF(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	for range 100 {
+		hub, err := llamaswap.NewHub(availableLoaded(t, at, llamaswap.ModeLive, "alpha"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		provider, err := NewFollowLoadedProvider(FollowLoadedOptions{Hub: hub, Mode: ModeLive, Now: func() time.Time { return at }, NewReader: func(string, *InputBudget) (Provider, error) { return finiteFollowReader{}, nil }})
+		if err != nil {
+			hub.Close()
+			t.Fatal(err)
+		}
+		emitted := make(chan string, 1)
+		err = provider.StreamWithTarget(t.Context(), func() error { return nil }, func(Target) error { return nil }, func(_ Stream, text string, _ bool) error { emitted <- text; return nil })
+		hub.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case line := <-emitted:
+			if line != "final line" {
+				t.Fatalf("line = %q", line)
+			}
+		default:
+			t.Fatal("final line was lost before EOF")
+		}
+	}
+}
+
+func TestFollowLoadedExpiresBeforeQueuedLine(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	clock := &followTestClock{now: at}
+	hub, err := llamaswap.NewHub(availableLoaded(t, at, llamaswap.ModeLive, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	timer := &followTestTimer{updates: make(chan time.Time, 1)}
+	created := make(chan *followReader, 1)
+	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{Hub: hub, Mode: ModeLive, Now: clock.Now, NewTimer: func(time.Duration) FollowLoadedTimer { return timer }, NewReader: func(string, *InputBudget) (Provider, error) {
+		reader := newFollowReader()
+		created <- reader
+		return reader, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan string, 3)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		_ = provider.StreamWithTarget(ctx, func() error { return nil }, func(target Target) error { events <- string(target.State); return nil }, func(_ Stream, text string, _ bool) error { events <- text; return nil })
+	}()
+	if event := <-events; event != string(TargetFollowing) {
+		t.Fatalf("initial event = %q", event)
+	}
+	reader := <-created
+	<-reader.started
+	clock.Set(at.Add(6 * time.Second))
+	reader.lines <- "stale line"
+	timer.updates <- clock.Now()
+	if event := <-events; event != string(TargetUnavailable) {
+		t.Fatalf("stale line crossed expiry: %q", event)
+	}
+	select {
+	case event := <-events:
+		t.Fatalf("unexpected post-expiry event %q", event)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestFollowLoadedCancellationWinsContinuousInventoryUpdates(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	hub, err := llamaswap.NewHub(availableLoaded(t, at, llamaswap.ModeLive, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	created := make(chan *followReader, 1)
+	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{Hub: hub, Mode: ModeLive, Now: func() time.Time { return at }, NewReader: func(string, *InputBudget) (Provider, error) {
+		reader := newFollowReader()
+		created <- reader
+		return reader, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- provider.StreamWithTarget(ctx, func() error { return nil }, func(Target) error { return nil }, func(Stream, string, bool) error { return nil })
+	}()
+	reader := <-created
+	<-reader.started
+	stopUpdates := make(chan struct{})
+	go func() {
+		defer close(stopUpdates)
+		for {
+			if err := hub.Publish(availableLoaded(t, at, llamaswap.ModeLive, "alpha")); err != nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+	}()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("continuous updates starved cancellation")
+	}
+	select {
+	case <-stopUpdates:
+	case <-time.After(time.Second):
+		t.Fatal("publisher did not stop")
 	}
 }
 
@@ -239,9 +368,6 @@ func (r *chargedFollowReader) Stream(ctx context.Context, ready func() error, _ 
 	if _, err := reader.Read(make([]byte, r.bytes)); err != nil {
 		return err
 	}
-	if _, err := reader.Read(make([]byte, 1)); err != nil && !errors.Is(err, io.EOF) {
-		return err
-	}
 	close(r.started)
 	<-ctx.Done()
 	return ctx.Err()
@@ -256,16 +382,10 @@ func TestFollowLoadedSharesRawBudgetAcrossTargetChanges(t *testing.T) {
 	}
 	defer hub.Close()
 	created := make(chan *chargedFollowReader, 2)
-	readerCount := 0
 	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{
 		Hub: hub, Mode: ModeLive, Now: clock.Now,
 		NewReader: func(_ string, budget *InputBudget) (Provider, error) {
-			amount := MaxInputBytes - 1
-			if readerCount != 0 {
-				amount = 2
-			}
-			readerCount++
-			reader := &chargedFollowReader{budget: budget, bytes: amount, started: make(chan struct{})}
+			reader := &chargedFollowReader{budget: budget, bytes: MaxInputBytes, started: make(chan struct{})}
 			created <- reader
 			return reader, nil
 		},
@@ -287,17 +407,20 @@ func TestFollowLoadedSharesRawBudgetAcrossTargetChanges(t *testing.T) {
 	if err := hub.Publish(availableLoaded(t, at.Add(time.Second), llamaswap.ModeLive, "bravo")); err != nil {
 		t.Fatal(err)
 	}
-	second := <-targets
-	if second.State != TargetFollowing || second.Model == nil || *second.Model != "bravo" {
-		t.Fatalf("target = %#v", second)
-	}
 	select {
+	case target := <-targets:
+		t.Fatalf("exhausted budget announced target %#v", target)
 	case err := <-done:
 		if !errors.Is(err, ErrByteLimit) {
 			t.Fatalf("stream error = %v", err)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("shared byte limit did not end the session")
+	}
+	select {
+	case <-created:
+		t.Fatal("exhausted budget opened another reader")
+	default:
 	}
 }
 

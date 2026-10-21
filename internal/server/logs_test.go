@@ -46,6 +46,17 @@ func (targetLogProvider) StreamWithTarget(ctx context.Context, ready func() erro
 	return emit(logs.StreamOutput, "new model line", false)
 }
 
+type scriptedTargetLogProvider struct {
+	script func(context.Context, func() error, logs.TargetEmit, logs.Emit) error
+}
+
+func (p scriptedTargetLogProvider) Stream(context.Context, func() error, logs.Emit) error {
+	return logs.ErrInvalid
+}
+func (p scriptedTargetLogProvider) StreamWithTarget(ctx context.Context, ready func() error, target logs.TargetEmit, emit logs.Emit) error {
+	return p.script(ctx, ready, target, emit)
+}
+
 type duplicateTargetLogProvider struct{}
 
 func (duplicateTargetLogProvider) Stream(ctx context.Context, ready func() error, emit logs.Emit) error {
@@ -151,6 +162,61 @@ func TestLoadedLogTargetFramePrecedesItsLine(t *testing.T) {
 	const target = "event: log-target\ndata: {\"schemaVersion\":1,\"mode\":\"DEMO\",\"sourceId\":\"model.loaded\",\"revision\":1,\"state\":\"FOLLOWING\",\"model\":\"example-chat\"}"
 	if !strings.Contains(body, target) || strings.Index(body, target) > strings.Index(body, `"text":"new model line"`) {
 		t.Fatalf("target ordering = %s", body)
+	}
+}
+
+func TestLoadedLogSourcesRequireValidFollowingTarget(t *testing.T) {
+	model := "example-chat"
+	for name, provider := range map[string]logs.Provider{
+		"missing-target-provider": &testLogProvider{},
+		"target-before-ready": scriptedTargetLogProvider{script: func(_ context.Context, _ func() error, target logs.TargetEmit, _ logs.Emit) error {
+			return target(logs.Target{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeDemo, SourceID: "model.loaded", Revision: 1, State: logs.TargetFollowing, Model: &model})
+		}},
+		"initial-revision-two": scriptedTargetLogProvider{script: func(_ context.Context, ready func() error, target logs.TargetEmit, _ logs.Emit) error {
+			if err := ready(); err != nil {
+				return err
+			}
+			return target(logs.Target{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeDemo, SourceID: "model.loaded", Revision: 2, State: logs.TargetFollowing, Model: &model})
+		}},
+		"line-before-following": scriptedTargetLogProvider{script: func(_ context.Context, ready func() error, _ logs.TargetEmit, emit logs.Emit) error {
+			if err := ready(); err != nil {
+				return err
+			}
+			return emit(logs.StreamOutput, "must not emit", false)
+		}},
+		"line-after-waiting": scriptedTargetLogProvider{script: func(_ context.Context, ready func() error, target logs.TargetEmit, emit logs.Emit) error {
+			if err := ready(); err != nil {
+				return err
+			}
+			if err := target(logs.Target{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeDemo, SourceID: "model.loaded", Revision: 1, State: logs.TargetWaiting}); err != nil {
+				return err
+			}
+			return emit(logs.StreamOutput, "must not emit", false)
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			registry, err := logs.NewRegistry(logs.ModeDemo, []logs.Entry{
+				{Source: logs.Source{ID: "llama.proxy", Label: "llama-swap proxy", Kind: logs.KindLlamaProxy}, Provider: logs.DemoProvider{}},
+				{Source: logs.Source{ID: "model.loaded", Label: "Currently loaded model", Kind: logs.KindLoadedModel}, Provider: provider},
+				{Source: logs.Source{ID: "docker.example-api", Label: "example-api", Kind: logs.KindDocker}, Provider: logs.DemoProvider{}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := newLogTestServer(t, registry)
+			response := sseRecorder{ResponseRecorder: httptest.NewRecorder()}
+			server.ServeHTTP(&response, allowedRequest(http.MethodGet, "/api/v1/logs/model.loaded"))
+			if name == "missing-target-provider" {
+				if response.Code != http.StatusServiceUnavailable {
+					t.Fatalf("status = %d", response.Code)
+				}
+				return
+			}
+			body := response.Body.String()
+			if strings.Contains(body, `"text":"must not emit"`) || !strings.Contains(body, `"reasonCode":"INVALID_RESPONSE"`) {
+				t.Fatalf("loaded target validation = %s", body)
+			}
+		})
 	}
 }
 

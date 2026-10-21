@@ -147,11 +147,15 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 			return nil
 		}
 		active.cancel()
-		err := <-active.done
+		if !active.finished {
+			active.result = <-active.done
+			active.finished = true
+		}
 		for {
 			select {
 			case <-active.lines:
 			default:
+				err := active.result
 				active = nil
 				return err
 			}
@@ -186,6 +190,9 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 		if selection.Revision > maxSafeRevision {
 			return ErrInvalid
 		}
+		if selection.State == TargetFollowing && budget.Exhausted() {
+			return ErrByteLimit
+		}
 		if err := targetEmit(selection); err != nil {
 			return err
 		}
@@ -202,6 +209,9 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		// A pending inventory update always wins over a queued line, so a line
 		// from the replaced model cannot pass its target transition.
 		select {
@@ -211,6 +221,39 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 			}
 			continue
 		default:
+		}
+		select {
+		case <-timerUpdates:
+			if err := apply(latest); err != nil {
+				return err
+			}
+			continue
+		default:
+		}
+		// The clock is checked at the line boundary as well as by the timer.
+		// This prevents a concurrently ready timer from letting stale output win
+		// a select race.
+		if active != nil && hasPrevious {
+			selection, _ := p.selectTarget(latest)
+			if !sameTarget(previous, selection) {
+				if err := apply(latest); err != nil {
+					return err
+				}
+				continue
+			}
+		}
+		if active != nil && active.finished {
+			select {
+			case line := <-active.lines:
+				if err := emit(line.stream, line.text, line.truncated); err != nil {
+					return err
+				}
+				continue
+			default:
+				err := active.result
+				active = nil
+				return err
+			}
 		}
 		var lines <-chan followLoadedLine
 		var done <-chan error
@@ -233,8 +276,7 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 				return err
 			}
 		case err := <-done:
-			active = nil
-			return err
+			active.finished, active.result = true, err
 		}
 	}
 }
@@ -292,9 +334,11 @@ type followLoadedLine struct {
 }
 
 type followLoadedReader struct {
-	cancel context.CancelFunc
-	lines  chan followLoadedLine
-	done   chan error
+	cancel   context.CancelFunc
+	lines    chan followLoadedLine
+	done     chan error
+	finished bool
+	result   error
 }
 
 func startFollowLoadedReader(parent context.Context, provider Provider) *followLoadedReader {

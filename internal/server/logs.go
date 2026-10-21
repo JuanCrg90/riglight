@@ -67,6 +67,11 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
+	targetProvider, isTargetProvider := provider.(logs.TargetProvider)
+	if source.Kind == logs.KindLoadedModel && !isTargetProvider {
+		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE", "unavailable")
+		return
+	}
 	streamContext, cancel := context.WithTimeout(request.Context(), logs.SessionLifetime)
 	stop := context.AfterFunc(s.context, cancel)
 	defer stop()
@@ -80,14 +85,14 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 	var previousTarget logs.Target
 	hasTarget := false
 	readyStream := func() error {
-		if ready {
+		if streamContext.Err() != nil || ready {
 			return logs.ErrInvalid
 		}
 		ready = true
 		return writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: catalog.Mode, SourceID: id, State: logs.StateStreaming})
 	}
 	emitLine := func(stream logs.Stream, text string, truncated bool) error {
-		if !ready || !utf8.ValidString(text) || len(text) > logs.MaxTextBytes {
+		if streamContext.Err() != nil || !ready || (source.Kind == logs.KindLoadedModel && (!hasTarget || previousTarget.State != logs.TargetFollowing)) || !utf8.ValidString(text) || len(text) > logs.MaxTextBytes {
 			return logs.ErrInvalid
 		}
 		sequence++
@@ -96,9 +101,9 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 		}
 		return writeLogEvent(w, logs.Event{SchemaVersion: logs.SchemaVersion, Mode: catalog.Mode, SourceID: id, Seq: sequence, Text: text, Stream: stream, Truncated: truncated})
 	}
-	if targetProvider, ok := provider.(logs.TargetProvider); ok {
+	if isTargetProvider {
 		err = targetProvider.StreamWithTarget(streamContext, readyStream, func(target logs.Target) error {
-			if source.Kind != logs.KindLoadedModel || target.Validate() != nil || target.Mode != catalog.Mode || target.SourceID != id || (hasTarget && (target.Revision <= targetRevision || sameLogTarget(previousTarget, target))) {
+			if streamContext.Err() != nil || !ready || source.Kind != logs.KindLoadedModel || target.Validate() != nil || target.Mode != catalog.Mode || target.SourceID != id || (!hasTarget && target.Revision != 1) || (hasTarget && (target.Revision <= targetRevision || sameLogTarget(previousTarget, target))) {
 				return logs.ErrInvalid
 			}
 			if err := writeLogTarget(w, target); err != nil {
