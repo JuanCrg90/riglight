@@ -14,6 +14,7 @@ class FakeEventSource {
   emit(type: string, data: unknown) { this.listeners.get(type)?.({ data: JSON.stringify(data) } as MessageEvent); }
 }
 const frame = (seq: number, text = `line ${seq}`, sourceId = 'model.example-model', mode = 'DEMO') => ({ schemaVersion: 1, mode, sourceId, seq, text, stream: 'STDOUT', truncated: false });
+const target = (revision: number, state: string, model: string | null) => ({ schemaVersion: 1, mode: 'DEMO', sourceId: 'model.loaded', revision, state, model });
 function setup(catalog = sources()) {
   const fetchMock = vi.fn().mockImplementation(async () => new Response(catalog));
   FakeEventSource.created = [];
@@ -52,6 +53,67 @@ describe('LogSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     expect(FakeEventSource.created[0]!.close).toHaveBeenCalled();
     expect(screen.getByText('<img src=x>')).toBeVisible();
+  });
+
+  it('prefers the loaded source, follows target changes on one EventSource, clears per-target output and preserves sequence', async () => {
+    const entries = [{ id: 'model.loaded', label: 'Currently loaded model', kind: 'LOADED_MODEL' }, { id: 'model.example', label: 'Fixed', kind: 'MODEL' }];
+    setup(sources('DEMO', entries)); render(<LogSection />);
+    fireEvent.click(screen.getByRole('button', { name: /open logs/i }));
+    await screen.findByLabelText('Log source');
+    expect((screen.getByLabelText('Log source') as HTMLSelectElement).value).toBe('model.loaded');
+    fireEvent.click(screen.getByRole('button', { name: 'Start' })); fireEvent.click(screen.getByRole('button', { name: 'Start log stream' }));
+    await waitFor(() => expect(FakeEventSource.created).toHaveLength(1));
+    const es = FakeEventSource.created[0]!;
+    act(() => es.emit('log', frame(1, 'too early', 'model.loaded')));
+    expect(es.close).toHaveBeenCalled();
+    cleanup();
+    setup(sources('DEMO', entries)); render(<LogSection />); const stream = await startViewer();
+    act(() => { stream.emit('log-target', target(1, 'FOLLOWING', 'model-a')); stream.emit('log', frame(1, 'A line', 'model.loaded')); });
+    expect(screen.getByText('A line')).toBeVisible();
+    expect(screen.getByText(/Following model-a/)).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Filter lines'), { target: { value: 'A line' } });
+    act(() => stream.emit('log-target', target(2, 'WAITING', null)));
+    expect(screen.queryByText('A line')).not.toBeInTheDocument();
+    expect(screen.queryByText('blocked')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Filter lines')).toHaveValue('');
+    expect(screen.getByText(/Loaded model waiting/)).toBeVisible();
+    act(() => { stream.emit('log-target', target(3, 'FOLLOWING', 'model-b')); stream.emit('log', frame(2, 'B line', 'model.loaded')); });
+    expect(screen.queryByText('A line')).not.toBeInTheDocument();
+    expect(screen.getByText('B line')).toBeVisible();
+    expect(FakeEventSource.created).toHaveLength(1);
+  });
+
+  it('keeps same-model paused history across Resume with unique session keys', async () => {
+    const entries = [{ id: 'model.loaded', label: 'Currently loaded model', kind: 'LOADED_MODEL' }];
+    setup(sources('DEMO', entries)); render(<LogSection />); const first = await startViewer();
+    act(() => { first.emit('log-target', target(1, 'FOLLOWING', 'model-a')); first.emit('log', frame(1, 'first session', 'model.loaded')); });
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' })); fireEvent.click(screen.getByRole('button', { name: 'Start log stream' }));
+    await waitFor(() => expect(FakeEventSource.created).toHaveLength(2));
+    const second = FakeEventSource.created[1]!;
+    act(() => second.emit('log-target', target(1, 'FOLLOWING', 'model-a')));
+    act(() => second.emit('log', frame(1, 'second session', 'model.loaded')));
+    expect(screen.getByText('first session')).toBeVisible();
+    expect(screen.getByText('second session')).toBeVisible();
+    expect(screen.getByRole('list', { name: 'Log output' }).querySelectorAll('li')).toHaveLength(2);
+  });
+
+  it('retains the paused model label but clears history for a different resumed target', async () => {
+    const entries = [{ id: 'model.loaded', label: 'Currently loaded model', kind: 'LOADED_MODEL' }];
+    const { fetchMock } = setup(sources('DEMO', entries));
+    render(<LogSection />); const first = await startViewer();
+    act(() => { first.emit('log-target', target(1, 'FOLLOWING', 'model-a')); first.emit('log', frame(1, 'A history', 'model.loaded')); });
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(screen.getByText(/retained from model-a/)).toBeVisible();
+    fetchMock.mockImplementation(async () => new Response(sources('DEMO', entries)));
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' })); fireEvent.click(screen.getByRole('button', { name: 'Start log stream' }));
+    await waitFor(() => expect(FakeEventSource.created).toHaveLength(2));
+    const second = FakeEventSource.created[1]!;
+    act(() => second.emit('log-target', target(1, 'FOLLOWING', 'model-b')));
+    expect(screen.queryByText('A history')).not.toBeInTheDocument();
+    act(() => second.emit('log', frame(1, 'B history', 'model.loaded')));
+    expect(screen.getByText('B history')).toBeVisible();
+    expect(FakeEventSource.created).toHaveLength(2);
   });
 
   it('keeps a stable accessible heading while collapsed and treats DISABLED separately from empty LIVE', async () => {

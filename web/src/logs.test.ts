@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendBoundedLine, parseLogCatalog, parseLogFrame, parseLogStatus, readBoundedText } from './logs';
+import { appendBoundedLine, parseLogCatalog, parseLogFrame, parseLogStatus, parseLogTarget, readBoundedText } from './logs';
 
 const catalog = { schemaVersion: 1, mode: 'DEMO', sources: [
   { id: 'llama.proxy', label: 'Proxy', kind: 'LLAMA_PROXY' },
@@ -15,6 +15,13 @@ describe('strict log protocol parsers', () => {
     expect(parseLogCatalog(JSON.stringify({ schemaVersion: 1, mode: 'DISABLED', sources: [] }))?.mode).toBe('DISABLED');
     expect(parseLogCatalog(JSON.stringify({ schemaVersion: 1, mode: 'LIVE', sources: [] }))?.sources).toEqual([]);
     expect(parseLogFrame(JSON.stringify(frame), 'DEMO', frame.sourceId, 0)?.text).toBe('<img src=x>');
+  });
+  it('accepts only model.loaded as the unique loaded-model source and shares the model quota', () => {
+    const loaded = { id: 'model.loaded', label: 'Currently loaded model', kind: 'LOADED_MODEL' };
+    expect(parseLogCatalog(JSON.stringify({ ...catalog, sources: [loaded] }))?.sources).toEqual([loaded]);
+    expect(parseLogCatalog(JSON.stringify({ ...catalog, sources: [loaded, { ...loaded, label: 'Again' }] }))).toBeNull();
+    expect(parseLogCatalog(JSON.stringify({ ...catalog, sources: [{ ...loaded, id: 'model.other' }] }))).toBeNull();
+    expect(parseLogCatalog(JSON.stringify({ ...catalog, sources: [...catalog.sources, ...Array.from({ length: 16 }, (_, i) => ({ id: `model.model-${i}`, label: 'Model', kind: 'MODEL' })), loaded] }))).toBeNull();
   });
   it('rejects extra fields, duplicates, kind mismatch, wrong JSON types and unsafe labels', () => {
     expect(parseLogCatalog(JSON.stringify({ ...catalog, surprise: true }))).toBeNull();
@@ -42,6 +49,21 @@ describe('strict log protocol parsers', () => {
     expect(parseLogFrame(`${wireFrame} `, 'DEMO', frame.sourceId, 0)).toBeNull();
     expect(parseLogCatalog(JSON.stringify(catalog).padEnd(16 * 1024, ' '))).not.toBeNull();
     expect(parseLogCatalog(' '.repeat(16 * 1024 + 1))).toBeNull();
+  });
+  it('strictly validates automatic target envelopes, revisions and target references', () => {
+    const target = { schemaVersion: 1, mode: 'DEMO', sourceId: 'model.loaded', revision: 1, state: 'FOLLOWING', model: 'example-chat' };
+    expect(parseLogTarget(JSON.stringify(target), 'DEMO', 'model.loaded', 0)).toEqual(target);
+    for (const invalid of [
+      { ...target, surprise: true }, { ...target, mode: 'LIVE' }, { ...target, sourceId: 'model.other' },
+      { ...target, revision: Number.MAX_SAFE_INTEGER + 1 }, { ...target, revision: 2 },
+      { ...target, model: 'x'.repeat(129) }, { ...target, model: 'unsafe/name' },
+      { ...target, state: 'WAITING', model: 'example-chat' },
+      { ...target, state: 'WAITING', model: null, revision: 0 },
+    ]) expect(parseLogTarget(JSON.stringify(invalid), 'DEMO', 'model.loaded', 0)).toBeNull();
+    expect(parseLogTarget(JSON.stringify({ ...target, revision: 2 }), 'DEMO', 'model.loaded', 1)?.revision).toBe(2);
+    for (const state of ['WAITING', 'UNAVAILABLE', 'AMBIGUOUS', 'UNSUPPORTED']) {
+      expect(parseLogTarget(JSON.stringify({ ...target, revision: 1, state, model: null }), 'DEMO', 'model.loaded', 0)?.state).toBe(state);
+    }
   });
   it('accepts only exact status reason/state combinations and literal string reasons', () => {
     expect(parseLogStatus(status('ENDED', 'BYTE_LIMIT'), 'DEMO', frame.sourceId)).toBeNull();

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { appendBoundedLine, parseLogCatalog, parseLogFrame, parseLogStatus, readBoundedText, type BoundedLines, type CatalogMode, type LogMode, type LogSource } from './logs';
+import { appendBoundedLine, parseLogCatalog, parseLogFrame, parseLogStatus, parseLogTarget, readBoundedText, type BoundedLines, type CatalogMode, type LogMode, type LogKind, type LogSource, type LogTarget } from './logs';
 
 const MAX_LINES = 200;
 const MAX_BYTES = 256 * 1024;
@@ -10,6 +10,9 @@ export function LogSection() {
   const [sources, setSources] = useState<LogSource[]>([]);
   const [catalogMode, setCatalogMode] = useState<CatalogMode | null>(null);
   const [bufferMode, setBufferMode] = useState<LogMode | null>(null);
+  const [bufferKind, setBufferKind] = useState<LogKind | null>(null);
+  const [bufferTargetLabel, setBufferTargetLabel] = useState<string | null>(null);
+  const [activeTarget, setActiveTarget] = useState<LogTarget | null>(null);
   const [sourceId, setSourceId] = useState('');
   const [state, setState] = useState<State>('CLOSED');
   const [buffer, setBuffer] = useState<BoundedLines>({ lines: [], bytes: 0 });
@@ -23,6 +26,9 @@ export function LogSection() {
   const epoch = useRef(0);
   const seq = useRef(0);
   const session = useRef(0);
+  const targetRevision = useRef(0);
+  const activeTargetRef = useRef<LogTarget | null>(null);
+  const preserveTargetOnResume = useRef(false);
 
   const closeStream = () => { epoch.current++; eventSource.current?.close(); eventSource.current = null; abort.current?.abort(); abort.current = null; };
   const clearLines = () => { setBuffer({ lines: [], bytes: 0 }); setFilter(''); };
@@ -37,7 +43,7 @@ export function LogSection() {
       const catalog = parseLogCatalog(raw);
       if (!catalog) throw new Error('Invalid log source catalog');
       setCatalogMode(catalog.mode); setSources(catalog.sources);
-      if (!catalog.sources.some(source => source.id === sourceId)) setSourceId(catalog.sources[0]?.id ?? '');
+      if (!catalog.sources.some(source => source.id === sourceId)) setSourceId(catalog.sources.find(source => source.kind === 'LOADED_MODEL')?.id ?? catalog.sources[0]?.id ?? '');
       setMessage(catalog.mode === 'DISABLED' ? 'Log viewing is not enabled.' : catalog.sources.length ? '' : 'No log sources are configured.');
       return catalog;
     } catch {
@@ -52,27 +58,32 @@ export function LogSection() {
   const start = async (resume = false) => {
     if (!sourceId || state === 'OPENING' || state === 'STREAMING') return;
     closeStream();
-    if (!resume) { clearLines(); setBufferMode(null); }
+    if (!resume) { clearLines(); setBufferMode(null); setBufferKind(null); setBufferTargetLabel(null); }
+    setActiveTarget(null); activeTargetRef.current = null; targetRevision.current = 0;
+    preserveTargetOnResume.current = resume && bufferTargetLabel !== null;
     seq.current = 0; setWarning(false); setMessage('');
     const id = epoch.current; setState('OPENING');
     const freshCatalog = await loadCatalog(id);
     if (!freshCatalog || id !== epoch.current || freshCatalog.mode === 'DISABLED' || !freshCatalog.sources.some(source => source.id === sourceId)) { if (id === epoch.current) setState('UNAVAILABLE'); return; }
     const streamMode: LogMode = freshCatalog.mode;
-    if (resume && bufferMode !== null && bufferMode !== streamMode) {
-      setState('UNAVAILABLE'); setMessage('The source mode changed. Clear the paused buffer and start a new session.'); return;
-    }
-    setBufferMode(streamMode);
-    const sessionId = ++session.current;
     const currentSource = sourceId;
+    const selectedSource = freshCatalog.sources.find(source => source.id === currentSource)!;
+    if (resume && bufferMode !== null && (bufferMode !== streamMode || bufferKind !== selectedSource.kind)) {
+      setState('UNAVAILABLE'); setMessage('The source mode changed or source kind changed. Clear the paused buffer and start a new session.'); return;
+    }
+    setBufferMode(streamMode); setBufferKind(selectedSource.kind);
+    const sessionId = ++session.current;
+    const automatic = selectedSource.kind === 'LOADED_MODEL';
     const streamEpoch = ++epoch.current;
     const es = new EventSource(`/api/v1/logs/${encodeURIComponent(currentSource)}`);
     eventSource.current = es;
     const onLog = (event: Event) => {
       if (streamEpoch !== epoch.current || eventSource.current !== es) return;
       const frame = parseLogFrame((event as MessageEvent).data, streamMode, currentSource, seq.current);
-      if (!frame) { es.close(); eventSource.current = null; setState('UNAVAILABLE'); setMessage('The log stream returned an invalid frame.'); return; }
+      if (!frame || (automatic && activeTargetRef.current?.state !== 'FOLLOWING')) { es.close(); eventSource.current = null; setState('UNAVAILABLE'); setMessage(!frame ? 'The log stream returned an invalid frame.' : 'The automatic log stream returned output before a valid loaded target.'); return; }
       seq.current = frame.seq;
       setBuffer(previous => appendBoundedLine(previous, frame, `${sessionId}-${frame.seq}`, MAX_LINES, MAX_BYTES));
+      if (automatic && activeTargetRef.current?.model) setBufferTargetLabel(activeTargetRef.current.model);
       setState('STREAMING');
     };
     const onStatus = (event: Event) => {
@@ -82,12 +93,26 @@ export function LogSection() {
       if (status.state === 'OPENING' || status.state === 'STREAMING') setState(status.state);
       else { es.close(); eventSource.current = null; setState(status.state); setMessage(status.reasonCode === 'EOF' ? 'The log stream ended.' : `Log stream ${status.state.toLowerCase().replace('_', ' ')} (${status.reasonCode}).`); }
     };
+    const onTarget = (event: Event) => {
+      if (streamEpoch !== epoch.current || eventSource.current !== es || !automatic) return;
+      const target = parseLogTarget((event as MessageEvent).data, streamMode, currentSource, targetRevision.current);
+      if (!target) { es.close(); eventSource.current = null; setState('UNAVAILABLE'); setMessage('The automatic log stream returned an invalid target.'); return; }
+      targetRevision.current = target.revision;
+      const sameRetainedTarget = preserveTargetOnResume.current && target.state === 'FOLLOWING' && target.model === bufferTargetLabel;
+      preserveTargetOnResume.current = false;
+      activeTargetRef.current = target;
+      setActiveTarget(target);
+      setBufferTargetLabel(target.state === 'FOLLOWING' ? target.model : null);
+      if (!sameRetainedTarget) clearLines();
+      setMessage('');
+    };
     es.addEventListener('log', onLog); es.addEventListener('log-status', onStatus);
+    if (automatic) es.addEventListener('log-target', onTarget);
     es.onerror = () => { if (streamEpoch === epoch.current && eventSource.current === es) { es.close(); eventSource.current = null; setState('UNAVAILABLE'); setMessage('The log stream disconnected. Start again to reconnect.'); } };
   };
-  const changeSource = (id: string) => { closeStream(); clearLines(); setBufferMode(null); seq.current = 0; setSourceId(id); setState('CLOSED'); setWarning(false); };
-  const pause = () => { closeStream(); setState('PAUSED'); };
-  const close = () => { closeStream(); clearLines(); setSources([]); setCatalogMode(null); setSourceId(''); setBufferMode(null); setState('CLOSED'); setWarning(false); setExpanded(false); setMessage(''); };
+  const changeSource = (id: string) => { closeStream(); clearLines(); setBufferMode(null); setBufferKind(null); setBufferTargetLabel(null); setActiveTarget(null); activeTargetRef.current = null; targetRevision.current = 0; seq.current = 0; setSourceId(id); setState('CLOSED'); setWarning(false); };
+  const pause = () => { closeStream(); setActiveTarget(null); activeTargetRef.current = null; targetRevision.current = 0; setState('PAUSED'); };
+  const close = () => { closeStream(); clearLines(); setSources([]); setCatalogMode(null); setSourceId(''); setBufferMode(null); setBufferKind(null); setBufferTargetLabel(null); setActiveTarget(null); activeTargetRef.current = null; targetRevision.current = 0; setState('CLOSED'); setWarning(false); setExpanded(false); setMessage(''); };
 
   useEffect(() => {
     const pane = logPane.current;
@@ -96,7 +121,9 @@ export function LogSection() {
   }, [buffer, follow]);
   useEffect(() => () => { closeStream(); }, []);
   const filtered = buffer.lines.filter(({ frame }) => !filter || frame.text.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
-  const displayMode = buffer.lines.length > 0 && bufferMode ? `${bufferMode} · retained output` : catalogMode ? `${catalogMode} · Manual, ephemeral stream` : 'Manual, ephemeral stream';
+  const loadedSource = sources.find(source => source.id === sourceId)?.kind === 'LOADED_MODEL';
+  const displayMode = bufferMode ? `${bufferMode} · ${bufferTargetLabel ? `retained output: ${bufferTargetLabel}` : loadedSource ? 'automatic loaded-model output' : 'retained output'}` : catalogMode ? `${catalogMode} · Manual, ephemeral stream` : 'Manual, ephemeral stream';
+  const targetStatus = activeTarget ? activeTarget.state === 'FOLLOWING' ? `Following ${activeTarget.model} · loaded state is not readiness` : `Loaded model ${activeTarget.state.toLowerCase()}` : state === 'PAUSED' && bufferTargetLabel ? `Paused · retained from ${bufferTargetLabel}` : null;
 
   return <section className="logs-section" aria-labelledby="logs-title">
     <div className="section-heading"><h2 id="logs-title">Logs inspector</h2><span>{displayMode}</span></div>
@@ -112,7 +139,7 @@ export function LogSection() {
         <button type="button" onClick={close}>Close</button>
       </div>
       {warning && <div className="logs-confirm" role="alert"><p>Logs may include sensitive information and are displayed as plain text only.</p><button type="button" onClick={() => { const resuming = state === 'PAUSED'; setWarning(false); void start(resuming); }}>Start log stream</button><button type="button" onClick={() => setWarning(false)}>Cancel</button></div>}
-      <div className="logs-tools"><label>Filter lines <input type="search" maxLength={128} value={filter} onChange={event => setFilter(event.target.value.slice(0, 128))} /></label><label><input type="checkbox" checked={follow} onChange={event => setFollow(event.target.checked)} /> Follow tail</label><span role="status">{state === 'CLOSED' ? 'Ready' : state.replace('_', ' ')}</span></div>
+      <div className="logs-tools"><label>Filter lines <input type="search" maxLength={128} value={filter} onChange={event => setFilter(event.target.value.slice(0, 128))} /></label><label><input type="checkbox" checked={follow} onChange={event => setFollow(event.target.checked)} /> Follow tail</label><span role="status">{state === 'CLOSED' ? 'Ready' : state.replace('_', ' ')}</span>{targetStatus && <span role="status" className="logs-target-status">{targetStatus}</span>}</div>
       <ol ref={logPane} className="logs-lines" aria-label="Log output" aria-live="off">{filtered.map(({ frame: line, key }) => <li key={key}><span className="log-stream">{line.stream}</span><pre>{line.text}{line.truncated ? ' [truncated]' : ''}</pre></li>)}</ol>
     </>}
   </section>;
