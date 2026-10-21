@@ -19,6 +19,7 @@ type Config struct {
 	Socket     string
 	Listen     string
 	Containers []Target
+	Logs       bool
 }
 
 func NewConfig(socket, listen string, selections []string) (Config, error) {

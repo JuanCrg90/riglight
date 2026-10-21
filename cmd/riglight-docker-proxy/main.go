@@ -27,10 +27,16 @@ func parseConfig(args []string) (dockerproxy.Config, error) {
 	listen := flags.String("listen", "127.0.0.1:9123", "")
 	var selections stringValues
 	flags.Var(&selections, "container", "")
+	logsEnabled := flags.Bool("logs", false, "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *socket == "" {
 		return dockerproxy.Config{}, errors.New("invalid arguments")
 	}
-	return dockerproxy.NewConfig(*socket, *listen, selections)
+	config, err := dockerproxy.NewConfig(*socket, *listen, selections)
+	if err != nil {
+		return dockerproxy.Config{}, err
+	}
+	config.Logs = *logsEnabled
+	return config, nil
 }
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -55,7 +61,15 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	defer hub.Close()
-	handler, err := dockerproxy.NewHTTPServer(hub, config.Listen, nil)
+	var logProvider *dockerproxy.LogProvider
+	if config.Logs {
+		logProvider, err = dockerproxy.NewLogProvider(config)
+		if err != nil {
+			return err
+		}
+		defer logProvider.CloseIdleConnections()
+	}
+	handler, err := dockerproxy.NewHTTPServerWithLogs(hub, config.Listen, nil, logProvider)
 	if err != nil {
 		return err
 	}

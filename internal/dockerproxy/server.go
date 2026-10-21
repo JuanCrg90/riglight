@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,12 +15,18 @@ import (
 const helperPollInterval = 5 * time.Second
 
 type HTTPServer struct {
-	hub  *containers.Hub
-	host string
-	now  func() time.Time
+	hub         *containers.Hub
+	host        string
+	now         func() time.Time
+	logProvider *LogProvider
+	logSlots    chan struct{}
 }
 
 func NewHTTPServer(hub *containers.Hub, host string, now func() time.Time) (*HTTPServer, error) {
+	return NewHTTPServerWithLogs(hub, host, now, nil)
+}
+
+func NewHTTPServerWithLogs(hub *containers.Hub, host string, now func() time.Time, logProvider *LogProvider) (*HTTPServer, error) {
 	canonical, ok := canonicalLoopbackListen(host)
 	if hub == nil || !ok || canonical != host {
 		return nil, errors.New("invalid docker proxy HTTP server")
@@ -27,7 +34,7 @@ func NewHTTPServer(hub *containers.Hub, host string, now func() time.Time) (*HTT
 	if now == nil {
 		now = time.Now
 	}
-	return &HTTPServer{hub: hub, host: host, now: now}, nil
+	return &HTTPServer{hub: hub, host: host, now: now, logProvider: logProvider, logSlots: make(chan struct{}, 2)}, nil
 }
 func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.headers(w)
@@ -40,7 +47,7 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusMethodNotAllowed)
 		return
 	}
-	if r.URL.RawQuery != "" || r.URL.ForceQuery || r.ContentLength != 0 || r.TransferEncoding != nil {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery || r.URL.RawPath != "" || r.ContentLength != 0 || r.TransferEncoding != nil {
 		s.error(w, http.StatusBadRequest)
 		return
 	}
@@ -54,7 +61,13 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.write(w, http.StatusOK, body)
+	case "/api/v1/log-sources":
+		s.logCatalog(w)
 	default:
+		if strings.HasPrefix(r.URL.Path, "/api/v1/logs/") {
+			s.logs(w, r)
+			return
+		}
 		s.error(w, http.StatusNotFound)
 	}
 }
