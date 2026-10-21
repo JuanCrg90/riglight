@@ -1,8 +1,11 @@
 package logs
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -115,7 +118,7 @@ func TestFollowLoadedTransitionsJoinOldReaderBeforeNewTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	targets := make(chan Target, 4)
 	done := make(chan error, 1)
@@ -142,7 +145,7 @@ func TestFollowLoadedTransitionsJoinOldReaderBeforeNewTarget(t *testing.T) {
 	case <-time.After(time.Second):
 		select {
 		case err := <-done:
-			t.Fatalf("provider stopped: %v; session context: %v", err, ctx.Err())
+			t.Fatalf("provider stopped: %v", err)
 		default:
 			t.Fatalf("waiting target not emitted; subscriptions = %d", hub.SubscriberCount())
 		}
@@ -217,6 +220,79 @@ func TestFollowLoadedExpiresWithoutInventoryPublication(t *testing.T) {
 	case <-reader.cancelled:
 	case <-time.After(time.Second):
 		t.Fatal("reader remained attached after expiry")
+	}
+}
+
+type chargedFollowReader struct {
+	budget  *InputBudget
+	bytes   int
+	started chan struct{}
+}
+
+func (r *chargedFollowReader) Stream(ctx context.Context, ready func() error, _ Emit) error {
+	if err := ready(); err != nil {
+		return err
+	}
+	reader := NewBudgetReaderWithBudget(bytes.NewReader(make([]byte, r.bytes)), r.budget)
+	if _, err := reader.Read(make([]byte, r.bytes)); err != nil {
+		return err
+	}
+	if _, err := reader.Read(make([]byte, 1)); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	close(r.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestFollowLoadedSharesRawBudgetAcrossTargetChanges(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	clock := &followTestClock{now: at}
+	hub, err := llamaswap.NewHub(availableLoaded(t, at, llamaswap.ModeLive, "alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	var readers []*chargedFollowReader
+	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{
+		Hub: hub, Mode: ModeLive, Now: clock.Now,
+		NewReader: func(_ string, budget *InputBudget) (Provider, error) {
+			amount := MaxInputBytes - 1
+			if len(readers) != 0 {
+				amount = 2
+			}
+			reader := &chargedFollowReader{budget: budget, bytes: amount, started: make(chan struct{})}
+			readers = append(readers, reader)
+			return reader, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	targets := make(chan Target, 2)
+	done := make(chan error, 1)
+	go func() {
+		done <- provider.StreamWithTarget(ctx, func() error { return nil }, func(target Target) error { targets <- target; return nil }, func(Stream, string, bool) error { return nil })
+	}()
+	<-targets
+	<-readers[0].started
+	clock.Set(at.Add(time.Second))
+	if err := hub.Publish(availableLoaded(t, at.Add(time.Second), llamaswap.ModeLive, "bravo")); err != nil {
+		t.Fatal(err)
+	}
+	second := <-targets
+	if second.State != TargetFollowing || second.Model == nil || *second.Model != "bravo" {
+		t.Fatalf("target = %#v", second)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrByteLimit) {
+			t.Fatalf("stream error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("shared byte limit did not end the session")
 	}
 }
 

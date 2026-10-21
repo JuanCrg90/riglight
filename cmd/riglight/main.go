@@ -47,6 +47,7 @@ type config struct {
 	dockerProxyURL    string
 	logs              bool
 	llamaLogProxy     bool
+	logLoadedModel    bool
 	logModels         []logModel
 	systemDetails     bool
 	networkInterfaces []string
@@ -169,7 +170,7 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		_ = listener.Close()
 		return errUnableToStart
 	}
-	logSources, closeLogs, err := selectLogSources(config)
+	logSources, closeLogs, err := selectLogSources(config, llamaSwapHub)
 	if err != nil {
 		cancelApplication()
 		_ = listener.Close()
@@ -309,6 +310,7 @@ func parseConfig(arguments []string) (config, error) {
 	dockerProxyURL := flags.String("docker-proxy-url", "", "")
 	logsEnabled := flags.Bool("logs", false, "")
 	llamaLogProxy := flags.Bool("llama-log-proxy", false, "")
+	logLoadedModel := flags.Bool("log-loaded-model", false, "")
 	var logModels stringValues
 	flags.Var(&logModels, "log-model", "")
 	systemDetails := flags.Bool("system-details", false, "")
@@ -322,7 +324,7 @@ func parseConfig(arguments []string) (config, error) {
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
-	listenSet, hostSet, allowClientSet, allowAllTailnetSet, urlSet, dockerURLSet, logsSet, llamaLogProxySet, logModelSet := false, false, false, false, false, false, false, false, false
+	listenSet, hostSet, allowClientSet, allowAllTailnetSet, urlSet, dockerURLSet, logsSet, llamaLogProxySet, logLoadedModelSet, logModelSet := false, false, false, false, false, false, false, false, false, false
 	flags.Visit(func(flag *flag.Flag) {
 		switch flag.Name {
 		case "listen":
@@ -341,6 +343,8 @@ func parseConfig(arguments []string) (config, error) {
 			logsSet = true
 		case "llama-log-proxy":
 			llamaLogProxySet = true
+		case "log-loaded-model":
+			logLoadedModelSet = true
 		case "log-model":
 			logModelSet = true
 		}
@@ -348,14 +352,17 @@ func parseConfig(arguments []string) (config, error) {
 	if (*tailnet && (*dev || !listenSet || !hostSet || (*allowAllTailnet == allowClientSet))) || (!*tailnet && (hostSet || allowClientSet || allowAllTailnetSet)) {
 		return config{}, errInvalidArguments
 	}
-	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, docker: *docker, dockerProxyURL: *dockerProxyURL, logs: *logsEnabled, llamaLogProxy: *llamaLogProxy, systemDetails: *systemDetails, tailnet: *tailnet, allowAllTailnet: *allowAllTailnet}
-	if (llamaLogProxySet || logModelSet) && (!*logsEnabled || !*llamaSwap) {
+	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, docker: *docker, dockerProxyURL: *dockerProxyURL, logs: *logsEnabled, llamaLogProxy: *llamaLogProxy, logLoadedModel: *logLoadedModel, systemDetails: *systemDetails, tailnet: *tailnet, allowAllTailnet: *allowAllTailnet}
+	if (llamaLogProxySet || logLoadedModelSet || logModelSet) && (!*logsEnabled || !*llamaSwap) {
+		return config{}, errInvalidArguments
+	}
+	if (logLoadedModelSet && (!*logLoadedModel || countFlag(arguments, "log-loaded-model") != 1)) || (*logLoadedModel && logModelSet) {
 		return config{}, errInvalidArguments
 	}
 	if logsSet && !*logsEnabled {
 		return config{}, errInvalidArguments
 	}
-	if len(logModels) > logs.MaxConfiguredItems {
+	if len(logModels)+boolCount(*logLoadedModel) > logs.MaxConfiguredItems {
 		return config{}, errInvalidArguments
 	}
 	seenLogAliases, seenLogReferences := map[string]struct{}{}, map[string]struct{}{}
@@ -433,6 +440,24 @@ func parseConfig(arguments []string) (config, error) {
 		}
 	}
 	return parsed, nil
+}
+
+func boolCount(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func countFlag(arguments []string, name string) int {
+	prefix := "--" + name
+	count := 0
+	for _, argument := range arguments {
+		if argument == prefix || strings.HasPrefix(argument, prefix+"=") {
+			count++
+		}
+	}
+	return count
 }
 
 func canonicalLoopbackListen(address string) (string, bool) {

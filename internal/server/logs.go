@@ -57,6 +57,11 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
+	source, found := catalogSource(catalog, id)
+	if !found {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+		return
+	}
 	provider, err := s.logSources.Provider(request.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
@@ -72,13 +77,14 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	sequence, ready := int64(0), false
-	err = provider.Stream(streamContext, func() error {
+	readyStream := func() error {
 		if ready {
 			return logs.ErrInvalid
 		}
 		ready = true
 		return writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: catalog.Mode, SourceID: id, State: logs.StateStreaming})
-	}, func(stream logs.Stream, text string, truncated bool) error {
+	}
+	emitLine := func(stream logs.Stream, text string, truncated bool) error {
 		if !ready || !utf8.ValidString(text) || len(text) > logs.MaxTextBytes {
 			return logs.ErrInvalid
 		}
@@ -87,7 +93,17 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 			return logs.ErrLineLimit
 		}
 		return writeLogEvent(w, logs.Event{SchemaVersion: logs.SchemaVersion, Mode: catalog.Mode, SourceID: id, Seq: sequence, Text: text, Stream: stream, Truncated: truncated})
-	})
+	}
+	if targetProvider, ok := provider.(logs.TargetProvider); ok {
+		err = targetProvider.StreamWithTarget(streamContext, readyStream, func(target logs.Target) error {
+			if source.Kind != logs.KindLoadedModel || target.Validate() != nil || target.Mode != catalog.Mode || target.SourceID != id {
+				return logs.ErrInvalid
+			}
+			return writeLogTarget(w, target)
+		}, emitLine)
+	} else {
+		err = provider.Stream(streamContext, readyStream, emitLine)
+	}
 	if request.Context().Err() != nil || s.context.Err() != nil {
 		return
 	}
@@ -111,18 +127,25 @@ func validLogSourceID(id string) bool {
 }
 
 func catalogContains(catalog logs.Catalog, id string) bool {
+	_, found := catalogSource(catalog, id)
+	return found
+}
+func catalogSource(catalog logs.Catalog, id string) (logs.Source, bool) {
 	for _, source := range catalog.Sources {
 		if source.ID == id {
-			return true
+			return source, true
 		}
 	}
-	return false
+	return logs.Source{}, false
 }
 func writeLogStatus(w http.ResponseWriter, value logs.Status) error {
 	return writeLogFrame(w, "log-status", value)
 }
 func writeLogEvent(w http.ResponseWriter, value logs.Event) error {
 	return writeLogFrame(w, "log", value)
+}
+func writeLogTarget(w http.ResponseWriter, value logs.Target) error {
+	return writeLogFrame(w, "log-target", value)
 }
 func writeLogFrame(w http.ResponseWriter, event string, value any) error {
 	body, err := json.Marshal(value)

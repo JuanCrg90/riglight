@@ -30,6 +30,22 @@ func (p *testLogProvider) Stream(ctx context.Context, ready func() error, emit l
 	return nil
 }
 
+type targetLogProvider struct{}
+
+func (targetLogProvider) Stream(ctx context.Context, ready func() error, emit logs.Emit) error {
+	return logs.ErrInvalid
+}
+func (targetLogProvider) StreamWithTarget(ctx context.Context, ready func() error, target logs.TargetEmit, emit logs.Emit) error {
+	if err := ready(); err != nil {
+		return err
+	}
+	model := "example-chat"
+	if err := target(logs.Target{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeDemo, SourceID: "model.loaded", Revision: 1, State: logs.TargetFollowing, Model: &model}); err != nil {
+		return err
+	}
+	return emit(logs.StreamOutput, "new model line", false)
+}
+
 type blockingLogProvider struct{ started chan struct{} }
 
 func (p *blockingLogProvider) Stream(ctx context.Context, ready func() error, _ logs.Emit) error {
@@ -99,6 +115,25 @@ func TestLogAdmissionRejectsThirdRequestBeforeCatalog(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("slot did not release")
 		}
+	}
+}
+
+func TestLoadedLogTargetFramePrecedesItsLine(t *testing.T) {
+	registry, err := logs.NewRegistry(logs.ModeDemo, []logs.Entry{
+		{Source: logs.Source{ID: "llama.proxy", Label: "llama-swap proxy", Kind: logs.KindLlamaProxy}, Provider: logs.DemoProvider{}},
+		{Source: logs.Source{ID: "model.loaded", Label: "Currently loaded model", Kind: logs.KindLoadedModel}, Provider: targetLogProvider{}},
+		{Source: logs.Source{ID: "docker.example-api", Label: "example-api", Kind: logs.KindDocker}, Provider: logs.DemoProvider{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := newLogTestServer(t, registry)
+	response := sseRecorder{ResponseRecorder: httptest.NewRecorder()}
+	server.ServeHTTP(&response, allowedRequest(http.MethodGet, "/api/v1/logs/model.loaded"))
+	body := response.Body.String()
+	const target = "event: log-target\ndata: {\"schemaVersion\":1,\"mode\":\"DEMO\",\"sourceId\":\"model.loaded\",\"revision\":1,\"state\":\"FOLLOWING\",\"model\":\"example-chat\"}"
+	if !strings.Contains(body, target) || strings.Index(body, target) > strings.Index(body, `"text":"new model line"`) {
+		t.Fatalf("target ordering = %s", body)
 	}
 }
 
