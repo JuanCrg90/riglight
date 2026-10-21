@@ -184,6 +184,7 @@ func readHelperSSE(ctx context.Context, body io.Reader, source string, emit Emit
 	reader := bufio.NewReaderSize(NewBudgetReader(body), 4096)
 	var event, data string
 	var sequence int64
+	opening, streaming := false, false
 	for {
 		line, err := readSSELine(reader)
 		if err != nil {
@@ -217,7 +218,7 @@ func readHelperSSE(ctx context.Context, body io.Reader, source string, emit Emit
 		switch event {
 		case "log":
 			var value Event
-			if !strictJSON([]byte(data), &value) || value.SchemaVersion != SchemaVersion || value.Mode != ModeLive || value.SourceID != source || value.Seq != sequence+1 || value.Seq <= 0 || !utf8.ValidString(value.Text) || len(value.Text) > MaxTextBytes || (value.Stream != StreamOutput && value.Stream != StreamStdout && value.Stream != StreamStderr) {
+			if !streaming || !strictJSON([]byte(data), &value) || value.SchemaVersion != SchemaVersion || value.Mode != ModeLive || value.SourceID != source || value.Seq != sequence+1 || value.Seq <= 0 || !utf8.ValidString(value.Text) || len(value.Text) > MaxTextBytes || (value.Stream != StreamOutput && value.Stream != StreamStdout && value.Stream != StreamStderr) {
 				return ErrInvalid
 			}
 			sequence = value.Seq
@@ -229,7 +230,26 @@ func readHelperSSE(ctx context.Context, body io.Reader, source string, emit Emit
 			if !strictJSON([]byte(data), &value) || !validRemoteStatus(value, source) {
 				return ErrInvalid
 			}
-			if value.State == StateEnded || value.State == StateUnavailable || value.State == StateLimitReached {
+			switch value.State {
+			case StateOpening:
+				if opening {
+					return ErrInvalid
+				}
+				opening = true
+			case StateStreaming:
+				if !opening || streaming {
+					return ErrInvalid
+				}
+				streaming = true
+			case StateEnded, StateLimitReached:
+				if !opening || !streaming {
+					return ErrInvalid
+				}
+				return errorForReason(*value.ReasonCode)
+			case StateUnavailable:
+				if !opening {
+					return ErrInvalid
+				}
 				return errorForReason(*value.ReasonCode)
 			}
 		default:

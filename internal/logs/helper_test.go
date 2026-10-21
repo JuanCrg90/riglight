@@ -9,6 +9,7 @@ import (
 
 func TestReadHelperSSERequiresModeSourceAndSequenceBindings(t *testing.T) {
 	valid := "event: log-status\ndata: {\"schemaVersion\":1,\"mode\":\"LIVE\",\"sourceId\":\"app\",\"state\":\"OPENING\",\"reasonCode\":null}\n\n" +
+		"event: log-status\ndata: {\"schemaVersion\":1,\"mode\":\"LIVE\",\"sourceId\":\"app\",\"state\":\"STREAMING\",\"reasonCode\":null}\n\n" +
 		"event: log\ndata: {\"schemaVersion\":1,\"mode\":\"LIVE\",\"sourceId\":\"app\",\"seq\":1,\"text\":\"line\",\"stream\":\"STDOUT\",\"truncated\":false}\n\n" +
 		"event: log-status\ndata: {\"schemaVersion\":1,\"mode\":\"LIVE\",\"sourceId\":\"app\",\"state\":\"ENDED\",\"reasonCode\":\"EOF\"}\n\n"
 	var got []string
