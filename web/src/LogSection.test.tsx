@@ -83,6 +83,15 @@ describe('LogSection', () => {
     expect(FakeEventSource.created).toHaveLength(1);
   });
 
+  it('fails closed on reserved automatic model references before displaying any lines', async () => {
+    const entries = [{ id: 'model.loaded', label: 'Currently loaded model', kind: 'LOADED_MODEL' }];
+    setup(sources('DEMO', entries)); render(<LogSection />); const stream = await startViewer();
+    act(() => stream.emit('log-target', target(1, 'FOLLOWING', 'proxy')));
+    act(() => stream.emit('log', frame(1, 'must not display', 'model.loaded')));
+    expect(stream.close).toHaveBeenCalled();
+    expect(screen.queryByText('must not display')).not.toBeInTheDocument();
+  });
+
   it('keeps same-model paused history across Resume with unique session keys', async () => {
     const entries = [{ id: 'model.loaded', label: 'Currently loaded model', kind: 'LOADED_MODEL' }];
     setup(sources('DEMO', entries)); render(<LogSection />); const first = await startViewer();

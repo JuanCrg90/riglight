@@ -71,7 +71,7 @@ export function parseLogTarget(raw: string, mode: LogMode, sourceId: string, las
     const targetStates: LogTargetState[] = ['FOLLOWING', 'WAITING', 'UNAVAILABLE', 'AMBIGUOUS', 'UNSUPPORTED'];
     if (!object(value) || !exact(value, ['schemaVersion', 'mode', 'sourceId', 'revision', 'state', 'model']) || value.schemaVersion !== 1 || value.mode !== mode || value.sourceId !== sourceId || typeof value.revision !== 'number' || !Number.isSafeInteger(value.revision) || value.revision <= lastRevision || value.revision < 1 || (lastRevision === 0 && value.revision !== 1) || typeof value.state !== 'string' || !targetStates.includes(value.state as LogTargetState)) return null;
     if (value.state === 'FOLLOWING') {
-      if (typeof value.model !== 'string' || bytes(value.model) > 128 || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value.model)) return null;
+      if (typeof value.model !== 'string' || bytes(value.model) > 128 || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value.model) || ['proxy', 'upstream', 'http'].includes(value.model)) return null;
     } else if (value.model !== null) return null;
     return value as LogTarget;
   } catch { return null; }
