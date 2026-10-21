@@ -47,7 +47,10 @@ New optional --logs dashboard flag gates all log routes and source construction.
 reserved proxy/upstream/http names rejected. Model labels use the existing safe
 alias grammar; at most 16 unique aliases/references. Unsupported slash-containing
 model IDs fail configuration rather than ambiguously addressing an upstream.
-No model discovery, wakeup, /running, inference, prompts API or control calls.
+No extra model discovery, wakeup, /running, inference, prompts API or control
+calls. The separately approved [follow-loaded extension](spec-loaded-logs.md)
+adds --log-loaded-model instead of manual mappings, selecting only the fresh,
+unique LOADED target from the already running inventory hub.
 The configured llama-swap base retains existing canonical loopback URL policy.
 
 Docker logs require dashboard --logs/--docker and separate helper --logs opt-in.
@@ -65,7 +68,9 @@ no separate log-only allowlist or authorization bypass is introduced.
 ## Protocol and bounded transport
 
 - GET /api/v1/log-sources returns schemaVersion:1, mode:DISABLED|DEMO|LIVE, and
-  sources:[{id,label,kind}], with kinds LLAMA_PROXY|MODEL|DOCKER. Demo --logs
+  sources:[{id,label,kind}], with fixed kinds LLAMA_PROXY|MODEL|DOCKER. The
+  follow-loaded extension adds LOADED_MODEL and its target envelope as specified
+  separately; existing fixed-source envelopes and defaults remain unchanged. Demo --logs
   supplies deterministic sources llama.proxy, model.example-model and
   docker.example-api without live clients; unrelated metric flags are not needed
   to read synthetic demo logs. Optional source

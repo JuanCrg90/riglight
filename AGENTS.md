@@ -30,6 +30,10 @@
   can contain secrets/prompts/configuration; warn, bound and render as plain text,
   never promise reliable redaction. No persistence/export, real log verification
   or live activation/service changes are authorized by implementation approval.
+- Owner clarified single-loaded-model automatic log following: implement
+  docs/spec-loaded-logs.md and tasks/loaded-logs-plan.md. Use only the existing
+  fresh, complete inventory hub; cancel/clear on target change, never infer/load
+  a model or guess during stale/ambiguous states. Session limits stay aggregate.
 - Public ingress, authentication, persistence and controls remain separate
   unapproved increments.
 - Do not stop/restart the owner's running server. Verify new builds on separate
