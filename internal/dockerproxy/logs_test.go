@@ -3,9 +3,11 @@ package dockerproxy
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"riglight/internal/logs"
 )
@@ -82,6 +84,35 @@ func TestLogProviderRejectsMalformedFramesAndMissingTTY(t *testing.T) {
 		})
 	}
 }
+func TestLogProviderBoundsQuietInspectBody(t *testing.T) {
+	original := inspectTimeout
+	inspectTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { inspectTimeout = original })
+	canceled := make(chan struct{})
+	socket, stop := fakeDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer stop()
+	config, _ := NewConfig(socket, "127.0.0.1:9123", []string{"app=service"})
+	provider, _ := NewLogProvider(config)
+	defer provider.CloseIdleConnections()
+	started := time.Now()
+	err := provider.Stream(context.Background(), "app", func() error { return nil }, func(logs.Stream, string, bool) error { return nil })
+	if !errors.Is(err, logs.ErrInvalid) || time.Since(started) > time.Second {
+		t.Fatalf("quiet inspect = %v after %s", err, time.Since(started))
+	}
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("quiet inspect body was not canceled")
+	}
+}
+
 func dockerFrame(stream byte, payload []byte) []byte {
 	frame := make([]byte, 8+len(payload))
 	frame[0] = stream

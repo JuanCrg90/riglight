@@ -79,7 +79,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	application, cancel := context.WithCancel(ctx)
 	worker := dockerproxy.StartWorker(hub, collector, application)
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 8 << 10}
+	server := newHTTPServer(application, handler)
 	serve := make(chan error, 1)
 	go func() { serve <- server.Serve(listener) }()
 	select {
@@ -98,4 +98,11 @@ func run(ctx context.Context, args []string) error {
 	_ = server.Shutdown(deadline)
 	worker.Wait(deadline)
 	return nil
+}
+
+func newHTTPServer(application context.Context, handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 8 << 10,
+		BaseContext: func(net.Listener) context.Context { return application },
+	}
 }

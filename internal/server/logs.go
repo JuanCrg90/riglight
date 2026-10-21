@@ -39,14 +39,7 @@ func (s *Server) logCatalog(w http.ResponseWriter, request *http.Request) {
 
 func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 	id := strings.TrimPrefix(request.URL.Path, "/api/v1/logs/")
-	if id == "" || strings.Contains(id, "/") {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
-		return
-	}
-	// Refresh the catalog for every deliberate Start/Resume before any upstream
-	// stream is opened. This also prevents a stale helper alias from rebinding.
-	catalog, err := s.logSources.Catalog(request.Context())
-	if err != nil || logs.ValidateCatalog(catalog) != nil || !catalogContains(catalog, id) || catalog.Mode == logs.ModeDisabled {
+	if !validLogSourceID(id) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
@@ -55,6 +48,13 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 		defer func() { <-s.logSlots }()
 	default:
 		writeError(w, http.StatusTooManyRequests, "STREAM_LIMIT", "stream unavailable")
+		return
+	}
+	// Admission precedes the helper-backed catalog refresh, so an overloaded
+	// dashboard never opens another helper connection merely to reject it.
+	catalog, err := s.logSources.Catalog(request.Context())
+	if err != nil || logs.ValidateCatalog(catalog) != nil || !catalogContains(catalog, id) || catalog.Mode == logs.ModeDisabled {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
 		return
 	}
 	provider, err := s.logSources.Provider(request.Context(), id)
@@ -96,6 +96,18 @@ func (s *Server) logStream(w http.ResponseWriter, request *http.Request) {
 	}
 	state, reason := logs.ReasonFor(err)
 	_ = writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: catalog.Mode, SourceID: id, State: state, ReasonCode: reason})
+}
+
+func validLogSourceID(id string) bool {
+	if id == "llama.proxy" {
+		return true
+	}
+	for _, prefix := range []string{"model.", "docker."} {
+		if strings.HasPrefix(id, prefix) && logs.ValidAlias(strings.TrimPrefix(id, prefix)) {
+			return true
+		}
+	}
+	return false
 }
 
 func catalogContains(catalog logs.Catalog, id string) bool {

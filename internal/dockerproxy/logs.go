@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"time"
 
 	"riglight/internal/logs"
 )
@@ -65,9 +66,13 @@ type logInspect struct {
 	} `json:"Config"`
 }
 
+var inspectTimeout = 2 * time.Second
+
 func (p *LogProvider) inspect(ctx context.Context, target Target) (logInspect, error) {
+	inspectContext, cancel := context.WithTimeout(ctx, inspectTimeout)
+	defer cancel()
 	var inspect logInspect
-	response, finish, err := p.get(ctx, "/v1.44/containers/"+target.Reference+"/json")
+	response, finish, err := p.get(inspectContext, "/v1.44/containers/"+target.Reference+"/json")
 	if err != nil {
 		return inspect, err
 	}

@@ -47,6 +47,10 @@ func (s *HTTPServer) logs(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusNotFound)
 		return
 	}
+	if _, selected := s.logProvider.targets[alias]; !selected {
+		s.error(w, http.StatusNotFound)
+		return
+	}
 	select {
 	case s.logSlots <- struct{}{}:
 		defer func() { <-s.logSlots }()
@@ -74,6 +78,9 @@ func (s *HTTPServer) logs(w http.ResponseWriter, r *http.Request) {
 			return logs.ErrInvalid
 		}
 		seq++
+		if seq > logs.MaxEmittedLines {
+			return logs.ErrLineLimit
+		}
 		return writeLogEvent(w, logs.Event{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: sourceID, Seq: seq, Text: text, Stream: stream, Truncated: truncated})
 	})
 	if r.Context().Err() != nil {
