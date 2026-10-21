@@ -132,7 +132,10 @@ Resolve only an exact configured selection; require a returned ID of exactly
 64 lowercase hexadecimal characters (0-9,a-f), reject anything else, and use it
 for logs, never browser input. Required TTY boolean is internal-only: framed
 stdout/stderr are parsed by Docker's eight-byte multiplex protocol, TTY is plain
-output. Malformed headers, unexpected streams, oversized/truncated frames and
+output. application/vnd.docker.multiplexed-stream is admitted only for inspected
+non-TTY containers, matching the API 1.42+ protocol. Legacy raw-stream and
+application/octet-stream remain admitted; no byte-sniffing fallback is allowed.
+Malformed headers, unexpected streams, oversized/truncated frames and
 missing TTY/identity fail closed; read payload incrementally, never allocate a
 frame's untrusted declared size. Preserve split UTF-8/lines and stdout/stderr
 separation, mark truncation, and never forward inspect configuration/diagnostics.

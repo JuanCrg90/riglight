@@ -106,6 +106,26 @@ not a rule disablement or file-wide exclusion. Independent review confirmed this
 classification and approved the narrow fingerprint exception. No actual secret
 was ignored and no history was rewritten.
 
+## Docker media-type compatibility
+
+Docker API 1.42 and later uses application/vnd.docker.multiplexed-stream for
+non-TTY container logs, while TTY logs retain the raw-stream type. See the
+[official Moby v28.5.1 handler](https://github.com/moby/moby/blob/v28.5.1/api/server/router/container/container_routes.go#L187-L197).
+The v1.44 helper now accepts that media type only when the selected container's
+validated inspect TTY flag is false. A multiplexed header with TTY=true is rejected
+before readiness/output. Existing raw-stream/octet-stream compatibility and
+strict stdcopy/UTF-8/identity/input/cancellation bounds remain unchanged; framing
+is never guessed from bytes or broadened to arbitrary response types.
+
+Regression tests exercise multiplexed non-TTY output, TTY mismatch rejection and
+MIME parameter/invalid-header cases. The built-helper fake Unix-daemon fixture now
+uses the API's multiplexed type for non-TTY and raw-stream for TTY. It demonstrated
+the old binary's rejection before rebuilding and passed with the corrected helper.
+Post-fix full verification passed: 197 frontend tests, 50 Chromium checks, complete
+Go race/vet/gofmt/module checks, native/no-CGO tests and four builds, six public
+systemd tests, the built-helper fixture and vulnerability audits. No dependency,
+selection or permission changes.
+
 ## Handoff and limitations
 
 Final documentation/link/fence/shell checks, full-history/public-export/frontend
