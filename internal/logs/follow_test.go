@@ -106,12 +106,12 @@ func TestFollowLoadedTransitionsJoinOldReaderBeforeNewTarget(t *testing.T) {
 	}
 	defer hub.Close()
 
-	var readers []*followReader
+	created := make(chan *followReader, 2)
 	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{
 		Hub: hub, Mode: ModeLive, Now: clock.Now,
 		NewReader: func(string, *InputBudget) (Provider, error) {
 			reader := newFollowReader()
-			readers = append(readers, reader)
+			created <- reader
 			return reader, nil
 		},
 	})
@@ -130,8 +130,9 @@ func TestFollowLoadedTransitionsJoinOldReaderBeforeNewTarget(t *testing.T) {
 	if first.State != TargetFollowing || first.Model == nil || *first.Model != "alpha" || first.Revision != 1 {
 		t.Fatalf("first target = %#v", first)
 	}
+	alphaReader := <-created
 	select {
-	case <-readers[0].started:
+	case <-alphaReader.started:
 	case <-time.After(time.Second):
 		t.Fatal("alpha reader did not start")
 	}
@@ -154,7 +155,7 @@ func TestFollowLoadedTransitionsJoinOldReaderBeforeNewTarget(t *testing.T) {
 		t.Fatalf("waiting target = %#v", waiting)
 	}
 	select {
-	case <-readers[0].cancelled:
+	case <-alphaReader.cancelled:
 	case <-time.After(time.Second):
 		t.Fatal("alpha reader was not joined before waiting")
 	}
@@ -166,8 +167,9 @@ func TestFollowLoadedTransitionsJoinOldReaderBeforeNewTarget(t *testing.T) {
 	if second.State != TargetFollowing || second.Model == nil || *second.Model != "bravo" || second.Revision != 3 {
 		t.Fatalf("second target = %#v", second)
 	}
+	bravoReader := <-created
 	select {
-	case <-readers[1].started:
+	case <-bravoReader.started:
 	case <-time.After(time.Second):
 		t.Fatal("bravo reader did not start")
 	}
@@ -253,16 +255,18 @@ func TestFollowLoadedSharesRawBudgetAcrossTargetChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	var readers []*chargedFollowReader
+	created := make(chan *chargedFollowReader, 2)
+	readerCount := 0
 	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{
 		Hub: hub, Mode: ModeLive, Now: clock.Now,
 		NewReader: func(_ string, budget *InputBudget) (Provider, error) {
 			amount := MaxInputBytes - 1
-			if len(readers) != 0 {
+			if readerCount != 0 {
 				amount = 2
 			}
+			readerCount++
 			reader := &chargedFollowReader{budget: budget, bytes: amount, started: make(chan struct{})}
-			readers = append(readers, reader)
+			created <- reader
 			return reader, nil
 		},
 	})
@@ -277,7 +281,8 @@ func TestFollowLoadedSharesRawBudgetAcrossTargetChanges(t *testing.T) {
 		done <- provider.StreamWithTarget(ctx, func() error { return nil }, func(target Target) error { targets <- target; return nil }, func(Stream, string, bool) error { return nil })
 	}()
 	<-targets
-	<-readers[0].started
+	alphaReader := <-created
+	<-alphaReader.started
 	clock.Set(at.Add(time.Second))
 	if err := hub.Publish(availableLoaded(t, at.Add(time.Second), llamaswap.ModeLive, "bravo")); err != nil {
 		t.Fatal(err)
@@ -304,11 +309,11 @@ func TestFollowLoadedKeepsFreshSameTargetAttached(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer hub.Close()
-	calls := 0
+	created := make(chan struct{}, 2)
 	reader := newFollowReader()
 	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{
 		Hub: hub, Mode: ModeLive, Now: clock.Now,
-		NewReader: func(string, *InputBudget) (Provider, error) { calls++; return reader, nil },
+		NewReader: func(string, *InputBudget) (Provider, error) { created <- struct{}{}; return reader, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -320,6 +325,7 @@ func TestFollowLoadedKeepsFreshSameTargetAttached(t *testing.T) {
 		_ = provider.StreamWithTarget(ctx, func() error { return nil }, func(target Target) error { targets <- target; return nil }, func(Stream, string, bool) error { return nil })
 	}()
 	<-targets
+	<-created
 	clock.Set(at.Add(time.Second))
 	if err := hub.Publish(availableLoaded(t, at.Add(time.Second), llamaswap.ModeLive, "alpha")); err != nil {
 		t.Fatal(err)
@@ -329,7 +335,9 @@ func TestFollowLoadedKeepsFreshSameTargetAttached(t *testing.T) {
 		t.Fatalf("same target republished: %#v", target)
 	case <-time.After(20 * time.Millisecond):
 	}
-	if calls != 1 {
-		t.Fatalf("reader calls = %d", calls)
+	select {
+	case <-created:
+		t.Fatal("same target opened another reader")
+	default:
 	}
 }
