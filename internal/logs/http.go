@@ -86,11 +86,15 @@ func NewUnixHTTPClient(socket string) *http.Client {
 type PlainHTTPProvider struct {
 	endpoint string
 	client   *http.Client
+	budget   *InputBudget
 }
 
 func NewPlainHTTPProvider(endpoint string) *PlainHTTPProvider {
+	return NewPlainHTTPProviderWithBudget(endpoint, nil)
+}
+func NewPlainHTTPProviderWithBudget(endpoint string, budget *InputBudget) *PlainHTTPProvider {
 	dialer := &net.Dialer{Timeout: openingTimeout}
-	return &PlainHTTPProvider{endpoint: endpoint, client: newHTTPClient(dialer.DialContext)}
+	return &PlainHTTPProvider{endpoint: endpoint, client: newHTTPClient(dialer.DialContext), budget: budget}
 }
 
 func (p *PlainHTTPProvider) CloseIdleConnections() { p.client.CloseIdleConnections() }
@@ -116,6 +120,9 @@ func (p *PlainHTTPProvider) Stream(ctx context.Context, ready func() error, emit
 	}
 	if err := ready(); err != nil {
 		return err
+	}
+	if p.budget != nil {
+		return ConsumePlainWithBudget(ctx, response.Body, StreamOutput, emit, p.budget)
 	}
 	return ConsumePlain(ctx, response.Body, StreamOutput, emit)
 }
