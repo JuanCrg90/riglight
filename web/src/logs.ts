@@ -1,43 +1,93 @@
-export type LogMode = 'DEMO' | 'LIVE';
+export type CatalogMode = 'DISABLED' | 'DEMO' | 'LIVE';
+export type LogMode = Exclude<CatalogMode, 'DISABLED'>;
 export type LogKind = 'LLAMA_PROXY' | 'MODEL' | 'DOCKER';
 export type LogSource = { id: string; label: string; kind: LogKind };
+export type LogCatalog = { mode: CatalogMode; sources: LogSource[] };
 export type LogFrame = { schemaVersion: 1; mode: LogMode; sourceId: string; seq: number; text: string; stream: 'OUTPUT' | 'STDOUT' | 'STDERR'; truncated: boolean };
 export type LogStatus = { schemaVersion: 1; mode: LogMode; sourceId: string; state: 'OPENING' | 'STREAMING' | 'ENDED' | 'UNAVAILABLE' | 'LIMIT_REACHED'; reasonCode: string | null };
+export type RetainedLogLine = { frame: LogFrame; key: string };
+export type BoundedLines = { lines: RetainedLogLine[]; bytes: number };
 const encoder = new TextEncoder();
 const bytes = (value: string) => encoder.encode(value).byteLength;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
-const modes = ['DISABLED', 'DEMO', 'LIVE'];
-const reasons = ['DISABLED', 'UNSUPPORTED', 'UPSTREAM_UNAVAILABLE', 'INVALID_RESPONSE', 'READ_FAILED', 'EOF', 'SESSION_LIMIT', 'BYTE_LIMIT', 'LINE_LIMIT'];
+const modes: CatalogMode[] = ['DISABLED', 'DEMO', 'LIVE'];
+const kinds: LogKind[] = ['LLAMA_PROXY', 'MODEL', 'DOCKER'];
+const streams: LogFrame['stream'][] = ['OUTPUT', 'STDOUT', 'STDERR'];
+const reasons = ['DISABLED', 'UNSUPPORTED', 'UPSTREAM_UNAVAILABLE', 'INVALID_RESPONSE', 'READ_FAILED', 'EOF', 'SESSION_LIMIT', 'BYTE_LIMIT', 'LINE_LIMIT'] as const;
+const states: LogStatus['state'][] = ['OPENING', 'STREAMING', 'ENDED', 'UNAVAILABLE', 'LIMIT_REACHED'];
+const hasControl = (value: string, allowTab: boolean) => Array.from(value).some(char => {
+  const code = char.codePointAt(0)!;
+  return (code < 32 && !(allowTab && code === 9)) || (code >= 127 && code <= 159);
+});
+const safeLabel = (label: string) => label.trim().length > 0 && !hasControl(label, false);
 
-export function parseLogCatalog(raw: string, expectedMode?: LogMode): LogSource[] | null {
+export function parseLogCatalog(raw: string, expectedMode?: CatalogMode): LogCatalog | null {
   if (bytes(raw) > 16 * 1024) return null;
   try {
     const value: unknown = JSON.parse(raw);
-    if (!object(value) || !exact(value, ['schemaVersion', 'mode', 'sources']) || value.schemaVersion !== 1 || !modes.includes(String(value.mode)) || (expectedMode && value.mode !== expectedMode) || !Array.isArray(value.sources) || value.sources.length > 33) return null;
-    const ids = new Set<string>(); const result: LogSource[] = [];
+    if (!object(value) || !exact(value, ['schemaVersion', 'mode', 'sources']) || value.schemaVersion !== 1 || typeof value.mode !== 'string' || !modes.includes(value.mode as CatalogMode) || (expectedMode !== undefined && value.mode !== expectedMode) || !Array.isArray(value.sources) || value.sources.length > 33) return null;
+    const ids = new Set<string>(); const sources: LogSource[] = [];
+    let proxies = 0; let models = 0; let docker = 0;
     for (const entry of value.sources) {
-      if (!object(entry) || !exact(entry, ['id', 'label', 'kind']) || typeof entry.id !== 'string' || !/^(llama\.proxy|model\.[A-Za-z0-9][A-Za-z0-9._-]*|docker\.[A-Za-z0-9][A-Za-z0-9._-]*)$/.test(entry.id) || bytes(entry.id) > 80 || typeof entry.label !== 'string' || bytes(entry.label) > 128 || !['LLAMA_PROXY', 'MODEL', 'DOCKER'].includes(String(entry.kind)) || ids.has(entry.id)) return null;
+      if (!object(entry) || !exact(entry, ['id', 'label', 'kind']) || typeof entry.id !== 'string' || !/^(llama\.proxy|model\.[A-Za-z0-9][A-Za-z0-9._-]*|docker\.[A-Za-z0-9][A-Za-z0-9._-]*)$/.test(entry.id) || bytes(entry.id) > 80 || typeof entry.label !== 'string' || bytes(entry.label) > 128 || !safeLabel(entry.label) || typeof entry.kind !== 'string' || !kinds.includes(entry.kind as LogKind) || ids.has(entry.id)) return null;
       if ((entry.id.startsWith('model.') && entry.kind !== 'MODEL') || (entry.id.startsWith('docker.') && entry.kind !== 'DOCKER') || (entry.id === 'llama.proxy' && entry.kind !== 'LLAMA_PROXY')) return null;
-      ids.add(entry.id); result.push({ id: entry.id, label: entry.label, kind: entry.kind as LogKind });
+      ids.add(entry.id); sources.push({ id: entry.id, label: entry.label, kind: entry.kind as LogKind });
+      if (entry.kind === 'LLAMA_PROXY' && ++proxies > 1) return null;
+      if (entry.kind === 'MODEL' && ++models > 16) return null;
+      if (entry.kind === 'DOCKER' && ++docker > 16) return null;
     }
-    return result;
+    if (value.mode === 'DISABLED' && sources.length !== 0) return null;
+    return { mode: value.mode as CatalogMode, sources };
   } catch { return null; }
 }
+
 export function parseLogFrame(raw: string, mode: LogMode, sourceId: string, lastSeq: number): LogFrame | null {
   if (bytes(raw) > 32 * 1024) return null;
   try {
     const value: unknown = JSON.parse(raw);
-    if (!object(value) || !exact(value, ['schemaVersion', 'mode', 'sourceId', 'seq', 'text', 'stream', 'truncated']) || value.schemaVersion !== 1 || value.mode !== mode || value.sourceId !== sourceId || typeof value.seq !== 'number' || !Number.isSafeInteger(value.seq) || value.seq <= lastSeq || value.seq < 1 || typeof value.text !== 'string' || bytes(value.text) > 4096 || !['OUTPUT', 'STDOUT', 'STDERR'].includes(String(value.stream)) || typeof value.truncated !== 'boolean') return null;
+    if (!object(value) || !exact(value, ['schemaVersion', 'mode', 'sourceId', 'seq', 'text', 'stream', 'truncated']) || value.schemaVersion !== 1 || value.mode !== mode || value.sourceId !== sourceId || typeof value.seq !== 'number' || !Number.isSafeInteger(value.seq) || value.seq <= lastSeq || value.seq < 1 || (lastSeq === 0 && value.seq !== 1) || typeof value.text !== 'string' || bytes(value.text) > 4096 || hasControl(value.text, true) || value.text.includes('\r') || value.text.includes('\n') || typeof value.stream !== 'string' || !streams.includes(value.stream as LogFrame['stream']) || typeof value.truncated !== 'boolean') return null;
     return value as LogFrame;
   } catch { return null; }
 }
+
 export function parseLogStatus(raw: string, mode: LogMode, sourceId: string): LogStatus | null {
   if (bytes(raw) > 32 * 1024) return null;
   try {
     const value: unknown = JSON.parse(raw);
-    if (!object(value) || !exact(value, ['schemaVersion', 'mode', 'sourceId', 'state', 'reasonCode']) || value.schemaVersion !== 1 || value.mode !== mode || value.sourceId !== sourceId || !['OPENING', 'STREAMING', 'ENDED', 'UNAVAILABLE', 'LIMIT_REACHED'].includes(String(value.state)) || !(value.reasonCode === null || reasons.includes(String(value.reasonCode)))) return null;
-    const valid = value.state === 'OPENING' || value.state === 'STREAMING' ? value.reasonCode === null : value.state === 'ENDED' ? value.reasonCode === 'EOF' : value.state === 'LIMIT_REACHED' ? ['SESSION_LIMIT', 'BYTE_LIMIT', 'LINE_LIMIT'].includes(String(value.reasonCode)) : value.state === 'UNAVAILABLE' && ['DISABLED', 'UNSUPPORTED', 'UPSTREAM_UNAVAILABLE', 'INVALID_RESPONSE', 'READ_FAILED'].includes(String(value.reasonCode));
+    if (!object(value) || !exact(value, ['schemaVersion', 'mode', 'sourceId', 'state', 'reasonCode']) || value.schemaVersion !== 1 || value.mode !== mode || value.sourceId !== sourceId || typeof value.state !== 'string' || !states.includes(value.state as LogStatus['state']) || !(value.reasonCode === null || (typeof value.reasonCode === 'string' && (reasons as readonly string[]).includes(value.reasonCode)))) return null;
+    const valid = value.state === 'OPENING' || value.state === 'STREAMING' ? value.reasonCode === null : value.state === 'ENDED' ? value.reasonCode === 'EOF' : value.state === 'LIMIT_REACHED' ? ['SESSION_LIMIT', 'BYTE_LIMIT', 'LINE_LIMIT'].includes(value.reasonCode as string) : value.state === 'UNAVAILABLE' && ['DISABLED', 'UNSUPPORTED', 'UPSTREAM_UNAVAILABLE', 'INVALID_RESPONSE', 'READ_FAILED'].includes(value.reasonCode as string);
     return valid ? value as LogStatus : null;
   } catch { return null; }
+}
+
+export function appendBoundedLine(current: BoundedLines, frame: LogFrame, key: string, maxLines = 200, maxBytes = 256 * 1024): BoundedLines {
+  const lineBytes = bytes(frame.text);
+  const lines = [...current.lines, { frame, key }];
+  let retainedBytes = current.bytes + lineBytes;
+  let first = 0;
+  while (lines.length - first > maxLines || retainedBytes > maxBytes) retainedBytes -= bytes(lines[first++]!.frame.text);
+  return { lines: lines.slice(first), bytes: retainedBytes };
+}
+
+export async function readBoundedText(response: Response, maxBytes: number, signal: AbortSignal): Promise<string> {
+  if (!response.body) throw new Error('Missing response body');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = []; let total = 0;
+  const cancel = () => { void reader.cancel().catch(() => undefined); };
+  signal.addEventListener('abort', cancel, { once: true });
+  try {
+    while (true) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const { done, value } = await reader.read();
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) throw new Error('Response too large');
+      chunks.push(value);
+    }
+    const combined = new Uint8Array(total); let offset = 0;
+    for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.byteLength; }
+    return new TextDecoder('utf-8', { fatal: true }).decode(combined);
+  } finally { signal.removeEventListener('abort', cancel); await reader.cancel().catch(() => undefined); }
 }
