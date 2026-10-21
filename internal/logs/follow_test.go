@@ -252,6 +252,76 @@ func TestFollowLoadedLineRechecksFreshnessAfterReceive(t *testing.T) {
 	}
 }
 
+func TestFollowLoadedRestoresUnopenedAnnouncedTarget(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	clock := &followTestClock{now: at}
+	initial := availableLoaded(t, at, llamaswap.ModeLive, "alpha")
+	hub, err := llamaswap.NewHub(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	created := make(chan *followReader, 2)
+	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{Hub: hub, Mode: ModeLive, Now: clock.Now, NewReader: func(string, *InputBudget) (Provider, error) {
+		reader := newFollowReader()
+		created <- reader
+		return reader, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	postCallbackReconciled := make(chan struct{})
+	var latestMu sync.Mutex
+	latestCalls := 0
+	provider.latest = func() llamaswap.Sample {
+		latestMu.Lock()
+		latestCalls++
+		if latestCalls == 2 {
+			close(postCallbackReconciled)
+		}
+		latestMu.Unlock()
+		return hub.Latest()
+	}
+	targets := make(chan Target, 2)
+	callbackAdvanced := make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		_ = provider.StreamWithTarget(ctx, func() error { return nil }, func(target Target) error {
+			targets <- target
+			clock.Set(at.Add(6 * time.Second))
+			close(callbackAdvanced)
+			return nil
+		}, func(Stream, string, bool) error { return nil })
+	}()
+	first := <-targets
+	if first.State != TargetFollowing || first.Revision != 1 {
+		t.Fatalf("first target = %#v", first)
+	}
+	<-callbackAdvanced
+	<-postCallbackReconciled
+	select {
+	case <-created:
+		t.Fatal("stale target opened a reader")
+	default:
+	}
+	freshAt := at.Add(6 * time.Second)
+	if err := hub.Publish(availableLoaded(t, freshAt, llamaswap.ModeLive, "alpha")); err != nil {
+		t.Fatal(err)
+	}
+	reader := <-created
+	select {
+	case <-reader.started:
+	case <-time.After(time.Second):
+		t.Fatal("fresh target did not attach a reader")
+	}
+	select {
+	case target := <-targets:
+		t.Fatalf("target repeated while attaching reader %#v", target)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
 func TestFollowLoadedExpiryUsesNewestSampleWithoutReopening(t *testing.T) {
 	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	clock := &followTestClock{now: at}

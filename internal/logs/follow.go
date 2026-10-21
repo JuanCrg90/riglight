@@ -183,6 +183,28 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 			timerUpdates = timer.C()
 		}
 		if hasPrevious && sameTarget(previous, selection) {
+			if selection.State != TargetFollowing || active != nil {
+				return nil
+			}
+			// A prior target callback can outlive freshness. If a later fresh
+			// sample restores that already-announced target, attach its missing
+			// reader without repeating the target envelope.
+			if budget.Exhausted() {
+				return ErrByteLimit
+			}
+			current := p.latest()
+			currentSelection, _ := p.selectTarget(current)
+			if !sameTarget(selection, currentSelection) {
+				return nil
+			}
+			reader, err := p.newReader(*selection.Model, budget)
+			if err != nil {
+				return err
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			active = startFollowLoadedReader(ctx, reader)
 			return nil
 		}
 		// A cancellation caused by a target transition is expected. Its reader
