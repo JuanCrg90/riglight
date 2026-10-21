@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -46,9 +47,10 @@ const (
 type Kind string
 
 const (
-	KindLlamaProxy Kind = "LLAMA_PROXY"
-	KindModel      Kind = "MODEL"
-	KindDocker     Kind = "DOCKER"
+	KindLlamaProxy  Kind = "LLAMA_PROXY"
+	KindModel       Kind = "MODEL"
+	KindLoadedModel Kind = "LOADED_MODEL"
+	KindDocker      Kind = "DOCKER"
 )
 
 type Stream string
@@ -173,7 +175,7 @@ func ValidateCatalog(c Catalog) error {
 		return ErrInvalid
 	}
 	seen := make(map[string]struct{}, len(c.Sources))
-	proxyCount, modelCount, dockerCount, total := 0, 0, 0, 0
+	proxyCount, modelCount, loadedCount, dockerCount, total := 0, 0, 0, 0, 0
 	for _, source := range c.Sources {
 		if !validID(source.ID) || !safeLabel(source.Label) {
 			return ErrInvalid
@@ -193,6 +195,12 @@ func ValidateCatalog(c Catalog) error {
 				return ErrInvalid
 			}
 			modelCount++
+		case KindLoadedModel:
+			if source.ID != "model.loaded" {
+				return ErrInvalid
+			}
+			loadedCount++
+			modelCount++
 		case KindDocker:
 			if !validSourceAlias(source.ID, "docker.") {
 				return ErrInvalid
@@ -203,7 +211,7 @@ func ValidateCatalog(c Catalog) error {
 		}
 		total += len(source.ID) + len(source.Label) + len(source.Kind) + 32
 	}
-	if proxyCount > 1 || modelCount > MaxConfiguredItems || dockerCount > MaxConfiguredItems || total > MaxCatalogBytes || (c.Mode == ModeDemo && !validDemoCatalog(c.Sources)) {
+	if proxyCount > 1 || modelCount > MaxConfiguredItems || loadedCount > 1 || dockerCount > MaxConfiguredItems || total > MaxCatalogBytes || (c.Mode == ModeDemo && !validDemoCatalog(c.Sources)) {
 		return ErrInvalid
 	}
 	return nil
@@ -231,7 +239,8 @@ func validDemoCatalog(sources []Source) bool {
 	for _, source := range sources {
 		kinds[source.ID] = source.Kind
 	}
-	return kinds["llama.proxy"] == KindLlamaProxy && kinds["model.example-model"] == KindModel && kinds["docker.example-api"] == KindDocker
+	modelKind := kinds["model.example-model"] == KindModel || kinds["model.loaded"] == KindLoadedModel
+	return kinds["llama.proxy"] == KindLlamaProxy && modelKind && kinds["docker.example-api"] == KindDocker
 }
 
 func validID(id string) bool {
@@ -305,36 +314,44 @@ func ReasonFor(err error) (State, *Reason) {
 	}
 }
 
-// BudgetReader counts body bytes before any protocol framing or normalization.
-type BudgetReader struct {
-	reader    io.Reader
+// InputBudget is a session-global raw body allowance. It remains independent
+// for fixed sources, while follow-loaded readers share one instance.
+type InputBudget struct {
+	mu        sync.Mutex
 	left      int
 	exhausted bool
 }
 
+func NewInputBudget() *InputBudget { return &InputBudget{left: MaxInputBytes} }
+
+// BudgetReader counts body bytes before any protocol framing or normalization.
+type BudgetReader struct {
+	reader io.Reader
+	budget *InputBudget
+}
+
 func NewBudgetReader(reader io.Reader) *BudgetReader {
-	return &BudgetReader{reader: reader, left: MaxInputBytes}
+	return NewBudgetReaderWithBudget(reader, NewInputBudget())
+}
+func NewBudgetReaderWithBudget(reader io.Reader, budget *InputBudget) *BudgetReader {
+	return &BudgetReader{reader: reader, budget: budget}
 }
 func (r *BudgetReader) Read(p []byte) (int, error) {
-	if r.exhausted {
-		return 0, ErrByteLimit
-	}
 	if len(p) == 0 {
 		return 0, nil
 	}
-	if r.left == 0 {
-		r.exhausted = true
+	r.budget.mu.Lock()
+	defer r.budget.mu.Unlock()
+	if r.budget.exhausted || r.budget.left == 0 {
+		r.budget.exhausted = true
 		return 0, ErrByteLimit
 	}
-	if len(p) > r.left {
-		p = p[:r.left]
+	if len(p) > r.budget.left {
+		p = p[:r.budget.left]
 	}
 	n, err := r.reader.Read(p)
-	r.left -= n
-	if err != nil {
-		return n, err
-	}
-	return n, nil
+	r.budget.left -= n
+	return n, err
 }
 
 type lineSink struct {
@@ -439,7 +456,14 @@ func normalize(input []byte) (string, bool) {
 }
 
 func ConsumePlain(ctx context.Context, body io.Reader, stream Stream, emit Emit) error {
-	reader := NewBudgetReader(body)
+	return ConsumePlainWithBudget(ctx, body, stream, emit, NewInputBudget())
+}
+
+func ConsumePlainWithBudget(ctx context.Context, body io.Reader, stream Stream, emit Emit, budget *InputBudget) error {
+	if budget == nil {
+		return ErrInvalid
+	}
+	reader := NewBudgetReaderWithBudget(body, budget)
 	sink := NewLineSink(emit)
 	buffer := make([]byte, 4096)
 	for {

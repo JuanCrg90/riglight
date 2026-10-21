@@ -147,6 +147,25 @@ func TestMarshalCanonicalizesNilModelListsWithoutPrivateFields(t *testing.T) {
 	}
 }
 
+func TestAvailableSampleFreshnessUsesPrivateCompletionTime(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, time.January, 1, 0, 0, 2, 0, time.UTC)
+	sample, err := NewAvailableSample(at, at, ModeLive, []Model{{ID: "model", State: StateLoaded}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remaining, ok := sample.Freshness(at.Add(5*time.Second), 6*time.Second); !ok || remaining != time.Second {
+		t.Fatalf("freshness = %s, %t", remaining, ok)
+	}
+	if _, ok := sample.Freshness(at.Add(6*time.Second), 6*time.Second); ok {
+		t.Fatal("six-second-old sample was fresh")
+	}
+	if _, ok := sample.Freshness(at.Add(-time.Nanosecond), 6*time.Second); ok {
+		t.Fatal("future completion was fresh")
+	}
+}
+
 func TestDemoSampleIsSyntheticAndAvailable(t *testing.T) {
 	t.Parallel()
 

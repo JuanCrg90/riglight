@@ -172,6 +172,19 @@ func (s Sample) validateOverview() error {
 	return nil
 }
 
+// Freshness reports the remaining age budget from the private monotonic
+// completion reading. It never derives freshness from the public sampledAt.
+func (s Sample) Freshness(now time.Time, limit time.Duration) (time.Duration, bool) {
+	if s.Status != OverviewAvailable || s.completedAt.IsZero() || limit <= 0 {
+		return 0, false
+	}
+	age := now.Sub(s.completedAt)
+	if age < 0 || age >= limit {
+		return 0, false
+	}
+	return limit - age, true
+}
+
 func (s Sample) MarshalJSON() ([]byte, error) { return s.MarshalAt(time.Now()) }
 
 func (s Sample) MarshalAt(now time.Time) ([]byte, error) {

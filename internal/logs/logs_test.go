@@ -38,6 +38,16 @@ func TestConsumePlainCountsRawBodyBeforeNormalization(t *testing.T) {
 	}
 }
 
+func TestSharedInputBudgetCountsAcrossReaders(t *testing.T) {
+	budget := NewInputBudget()
+	if err := ConsumePlainWithBudget(context.Background(), bytes.NewReader(bytes.Repeat([]byte("a"), MaxInputBytes-1)), StreamOutput, func(Stream, string, bool) error { return nil }, budget); err != nil {
+		t.Fatal(err)
+	}
+	if err := ConsumePlainWithBudget(context.Background(), bytes.NewReader([]byte("bc")), StreamOutput, func(Stream, string, bool) error { return nil }, budget); !errors.Is(err, ErrByteLimit) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestRegistryEmptyCatalogUsesAnEmptyArray(t *testing.T) {
 	registry, err := NewRegistry(ModeLive, []Entry{})
 	if err != nil {
@@ -50,7 +60,7 @@ func TestRegistryEmptyCatalogUsesAnEmptyArray(t *testing.T) {
 }
 
 func TestValidateCatalogRejectsDuplicatesAndOversizeValues(t *testing.T) {
-	valid := Catalog{SchemaVersion: SchemaVersion, Mode: ModeLive, Sources: []Source{{ID: "model.alpha", Label: "Alpha", Kind: KindModel}}}
+	valid := Catalog{SchemaVersion: SchemaVersion, Mode: ModeLive, Sources: []Source{{ID: "model.alpha", Label: "Alpha", Kind: KindModel}, {ID: "model.loaded", Label: "Currently loaded model", Kind: KindLoadedModel}}}
 	if err := ValidateCatalog(valid); err != nil {
 		t.Fatal(err)
 	}
