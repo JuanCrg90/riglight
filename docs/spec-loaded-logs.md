@@ -44,8 +44,10 @@ assuming any undocumented stronger upstream guarantee.
 - More than one LOADED target: AMBIGUOUS; no selection or log I/O.
 - Stale, unavailable, pending, truncated or mismatched inventory: UNAVAILABLE;
   immediately cancel any target and wait for a fresh valid inventory.
-- Unsupported inventory capability, reserved channel, slash/dot/unsafe model
-  reference: UNSUPPORTED; never rewrite/probe a broader route.
+- Unsupported inventory capability, reserved channel, slash-containing or unsafe
+  model reference, or exact dot segment . or ..: UNSUPPORTED; never rewrite/probe
+  a broader route. Internal dots and leading _/./- in other safe identifiers are
+  allowed, matching the existing backend reference validator.
 
 Do not infer a target from GPU/processes/commands, /running, access logs, proxy
 logs or arbitrary caller input. No fallback to combined/all-upstream channels.

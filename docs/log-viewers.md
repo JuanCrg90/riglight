@@ -18,7 +18,8 @@ log-only login or device allowlist. The operator explicitly chose this audience;
 reconsider it before enabling logs on a shared tailnet. Never expose them publicly.
 
 Metric and inventory APIs retain their field allowlists. The exception is text
-from an explicitly enabled and selected log source. Inspect configuration,
+from an explicitly enabled and selected log source, including the currently loaded
+model when automatic following has been explicitly enabled. Inspect configuration,
 healthcheck output, arbitrary daemon endpoints and upstream event/configuration
 APIs still cannot be exposed through the log viewer.
 
@@ -49,6 +50,44 @@ selecting a broader stream. Unknown/unavailable model loggers never load a model
 Only the fixed GET log-stream routes are used. The fixed /v1/models inventory
 collector remains independent. Combined, all-upstream, HTTP access, /running,
 configuration, general events, inference and mutable routes stay excluded.
+
+### Follow whichever model is loaded
+
+Instead of individual mappings, explicitly enable the single-current-model source:
+
+```sh
+./bin/riglight --logs --llama-swap --llama-log-proxy --log-loaded-model
+```
+
+This offers **Currently loaded model**. Start it once to follow the single model
+reported LOADED by the existing inventory, switching within the same bounded
+connection when that target changes. Old output and the filter are cleared before
+new-model lines appear; no mixed-model history is retained. The selected model's
+safe inventory identifier is shown beside its output. LOADED is not readiness.
+
+No loaded model means waiting without opening a model log reader. Stale or
+incomplete inventory stops reading; multiple reported LOADED models are ambiguous
+and none is selected. Unsupported identifiers never fall back to a broader log
+channel. Age expires after six seconds even if inventory stops publishing. Fresh
+samples for the same target do not reopen the reader or repeat history.
+
+--log-loaded-model requires both --logs and --llama-swap, and cannot be combined
+with --log-model. Proxy and Docker selections remain independent. It uses only
+existing inventory results, not GPU/process scans, /running, extra discovery,
+inference, model controls or a new browser metric connection. Pause retains the
+original model label; Resume attaches the current eligible target and clears old
+output if it differs. There is still no automatic EOF/error/limit reconnect.
+The five-minute/2-MiB/4096-line limits apply across all models in that session;
+changing models does not reset them. Start/Resume remains explicit after limits.
+
+For a synthetic demonstration only:
+
+```sh
+./bin/riglight --demo --logs --llama-swap --log-loaded-model
+```
+
+No live provider is constructed in this demo. See the
+[automatic source contract](spec-loaded-logs.md).
 
 For Docker, the separately configured filtering helper also needs --logs.
 Synthetic examples, NOT replacement instructions for a running installation:
@@ -107,7 +146,8 @@ malformed messages instead of displaying them as trustworthy data.
 Each process permits two active log sessions independently of metric clients.
 Excess opens receive 429 without starting another provider. Each session ends at
 five minutes, 2 MiB raw upstream-body input or 4096 emitted lines, whichever comes
-first; protocol frames are capped at 32 KiB. Raw framing, discarded controls and
+first; automatic model changes do not reset those limits. Protocol frames are
+capped at 32 KiB. Raw framing, discarded controls and
 truncated text count toward input budgets. Catalogs have at most 33 entries and
 16 KiB. Fixed read buffers and downstream write deadlines bound slow consumers.
 

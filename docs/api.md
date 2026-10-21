@@ -348,7 +348,9 @@ GET /api/v1/log-sources returns exactly:
 Mode is DISABLED|DEMO|LIVE; DISABLED has no sources. Catalogs are at most 16 KiB,
 33 unique sources, 80 ASCII bytes per ID and 128 UTF-8 bytes per label. IDs are
 llama.proxy, model.<configured-safe-alias> or docker.<configured-safe-alias>;
-kind must match the ID. No URL, socket, model reference or Docker ID is exposed.
+kind must match the ID. LOADED_MODEL is additionally allowed only for model.loaded,
+at most once, sharing the 16-model quota with MODEL. No URL, socket, configured
+fixed-model reference or Docker ID is exposed in the catalog.
 The helper catalog is internal loopback-only and has exactly schemaVersion:1,
 enabled:boolean, aliases:[configured-safe-alias] (at most 16). Helper --logs is
 independent opt-in; unavailable/disabled helpers cannot break other log sources.
@@ -384,16 +386,47 @@ connection. Unknown keys/types/reasons, source/mode mismatches and old sequences
 must not be rendered as valid output. Resume may repeat bounded upstream history;
 there is no catch-up promise or model/container readiness implication.
 
+With explicit --log-loaded-model (requiring --logs and --llama-swap, mutually
+exclusive with --log-model), the model.loaded source follows the fresh, unique
+LOADED target from the existing inventory hub. It never loads/unloads a model or
+opens extra inventory endpoints. Its additional named log-target envelope is:
+
+```json
+{"schemaVersion":1,"mode":"DEMO","sourceId":"model.loaded","revision":1,"state":"FOLLOWING","model":"example-chat"}
+```
+
+All six keys are required and exact. Revision starts at 1 and increases strictly
+within the same physical session. State is FOLLOWING|WAITING|UNAVAILABLE|AMBIGUOUS|
+UNSUPPORTED; only FOLLOWING has a nonnull safe supported model identifier (up to
+128 UTF-8 bytes), already reported by inventory. Other states require model:null.
+Mode/source bind the session; fixed MODEL kind with alias loaded does not enable
+this behavior. No log lines are accepted before a valid FOLLOWING target. Changes
+cancel/join the old reader before publishing the transition, clear client output
+and filter, and preserve the session-global line sequence. Old paused output
+keeps its original model label; Resume refreshes the target without mixing models.
+
+Fresh selection requires AVAILABLE, matching mode, complete untruncated inventory,
+completion age strictly below six seconds, and exactly one reported LOADED model.
+No target waits, multiple targets are ambiguous, stale/unavailable inventory stops
+reading, and unsafe/reserved/path-like references are unsupported; no guessing or
+fallback. Quiet inventory expires without new events. Same-target fresh samples
+do not reopen logs. Inventory target changes use the same browser connection;
+EOF/error/limits still terminate without automatic reconnect. See the
+[exact extension contract](spec-loaded-logs.md).
+
 Each process has two active log slots. Sessions are limited to five minutes,
-2 MiB raw input including framing/discarded data, and 4096 emitted lines. Each
+2 MiB raw input including framing/discarded data, and 4096 emitted lines. These
+limits remain aggregate across automatic model changes, not per target. Each
 main/helper hop applies raw-body caps. Opening headers wait ten seconds; writes
 have one-second deadlines. Disconnect/pause/close/source-switch/shutdown cancel
 requests and release slots without blocking independent metric collection. The
 browser retains at most 200 lines AND 256 KiB UTF-8 text, clearing all log/filter
 state on close/unmount/source change. No download, persistence or export.
 
-Only fixed llama-swap proxy/explicit model log-stream GETs and helper-selected
-Docker v1.44 inspect/ID-bound logs are permitted. Combined/all-upstream/HTTP logs,
-/running, generic upstream events, discovery, inference and controls stay excluded.
+Only fixed llama-swap proxy/selected-model log-stream GETs and helper-selected
+Docker v1.44 inspect/ID-bound logs are permitted. Automatic selection uses the
+already enabled inventory hub, never browser-supplied references. Combined/
+all-upstream/HTTP logs, /running, generic upstream events, extra discovery,
+inference and controls stay excluded.
 See [operator/privacy guide](log-viewers.md), [source/limit contract](spec-logs.md)
 and [tasks](../tasks/logs-plan.md). Implementation does not activate live logs.

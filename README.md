@@ -122,6 +122,12 @@ Live sources are separately configured llama-swap proxy diagnostics, selected
 model-server logs and the helper's selected containers (helper also needs --logs).
 Viewers open only on explicit action, keep bounded browser memory, and provide
 pause/resume, local filtering, follow-tail, clear and close—not persistence/export.
+With --logs --llama-swap --log-loaded-model, **Currently loaded model** follows
+the single fresh reported LOADED target automatically, clearing output on model
+changes. No individual mappings, model controls or extra discovery are needed;
+ambiguous/stale inventory stops reads. Session limits remain aggregate. See the
+[automatic-source contract](docs/spec-loaded-logs.md) and
+[verification](docs/verification-loaded-logs.md).
 Raw text may contain secrets and is visible to the existing admitted audience.
 See [setup and privacy](docs/log-viewers.md), [contract](docs/spec-logs.md) and
 [tasks](tasks/logs-plan.md). Building/testing does not activate live log access.

@@ -91,6 +91,15 @@ Live daemon compatibility/deployment requires separate verification and consent.
 Optional --logs viewers are manual, ephemeral and disabled by default. Source
 choices are configured llama-swap proxy diagnostics, explicit model-server logs,
 and the Docker helper's configured selections (helper also requires --logs).
+Explicit --log-loaded-model instead follows the fresh, unique reported LOADED
+model from the existing complete inventory hub, not a caller-supplied reference.
+Stale/ambiguous/truncated inventory cancels reads; unsupported paths/channels
+are never probed. It neither loads models nor implies readiness. The selected
+safe inventory identifier labels output. Target changes cancel/join the old
+reader and clear its buffer before new lines; age expires without new events.
+Limits stay aggregate across target changes, within the same manually started
+connection. Closed/paused viewers do not follow in the background. See the
+[automatic-source contract](docs/spec-loaded-logs.md).
 Combined/all-upstream/HTTP-access channels, inference, /running, daemon discovery,
 configuration endpoints and controls remain excluded. The main executable never
 receives the daemon socket. The helper's required inspect TTY boolean and full
