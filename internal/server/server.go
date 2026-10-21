@@ -8,11 +8,13 @@ import (
 	"io/fs"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"riglight/internal/containers"
 	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
+	"riglight/internal/logs"
 	"riglight/internal/metrics"
 	"riglight/internal/systemmetrics"
 )
@@ -25,6 +27,7 @@ type Config struct {
 	ModelsHub         *llamaswap.Hub
 	ContainersHub     *containers.Hub
 	SystemHub         *systemmetrics.Hub
+	LogSources        logs.CatalogProvider
 	AllowedHost       string
 	AllowedOrigin     string
 	AdditionalOrigins []string
@@ -42,6 +45,8 @@ type Server struct {
 	modelsHub       *llamaswap.Hub
 	containersHub   *containers.Hub
 	systemHub       *systemmetrics.Hub
+	logSources      logs.CatalogProvider
+	logSlots        chan struct{}
 	allowedHost     string
 	allowedOrigins  map[string]struct{}
 	allowedClients  map[netip.Addr]struct{}
@@ -90,6 +95,8 @@ func New(config Config) (*Server, error) {
 		modelsHub:       config.ModelsHub,
 		containersHub:   config.ContainersHub,
 		systemHub:       config.SystemHub,
+		logSources:      config.LogSources,
+		logSlots:        make(chan struct{}, 2),
 		allowedHost:     config.AllowedHost,
 		allowedOrigins:  allowedOrigins,
 		allowedClients:  allowedClients,
@@ -158,7 +165,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 			return
 		}
 		s.models(w)
+	case "/api/v1/log-sources":
+		if s.logSources == nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+			return
+		}
+		if !requireGet(w, request) || !validLogInput(w, request) {
+			return
+		}
+		s.logCatalog(w, request)
 	default:
+		if strings.HasPrefix(request.URL.Path, "/api/v1/logs/") {
+			if s.logSources == nil {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+				return
+			}
+			if !requireGet(w, request) || !validLogInput(w, request) {
+				return
+			}
+			s.logStream(w, request)
+			return
+		}
 		name, ok := s.assetPath(request.URL.Path)
 		if !ok {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")

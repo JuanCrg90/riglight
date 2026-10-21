@@ -12,12 +12,14 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"riglight/internal/containers"
 	"riglight/internal/gpu"
 	"riglight/internal/llamaswap"
+	"riglight/internal/logs"
 	"riglight/internal/metrics"
 	"riglight/internal/server"
 	"riglight/internal/systemmetrics"
@@ -43,6 +45,9 @@ type config struct {
 	llamaSwapURL      string
 	docker            bool
 	dockerProxyURL    string
+	logs              bool
+	llamaLogProxy     bool
+	logModels         []logModel
 	systemDetails     bool
 	networkInterfaces []string
 	tailnet           bool
@@ -164,6 +169,13 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		_ = listener.Close()
 		return errUnableToStart
 	}
+	logSources, closeLogs, err := selectLogSources(config)
+	if err != nil {
+		cancelApplication()
+		_ = listener.Close()
+		return errUnableToStart
+	}
+	defer closeLogs()
 	origins := []string(nil)
 	allowedHost := config.listen
 	if config.tailnet {
@@ -177,6 +189,7 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		ModelsHub:         llamaSwapHub,
 		ContainersHub:     containerHub,
 		SystemHub:         systemHub,
+		LogSources:        logSources,
 		AllowedHost:       allowedHost,
 		AllowedOrigin:     "http://" + allowedHost,
 		AdditionalOrigins: origins,
@@ -294,6 +307,10 @@ func parseConfig(arguments []string) (config, error) {
 	llamaSwapURL := flags.String("llama-swap-url", defaultLlamaSwapURL, "")
 	docker := flags.Bool("docker", false, "")
 	dockerProxyURL := flags.String("docker-proxy-url", "", "")
+	logsEnabled := flags.Bool("logs", false, "")
+	llamaLogProxy := flags.Bool("llama-log-proxy", false, "")
+	var logModels stringValues
+	flags.Var(&logModels, "log-model", "")
 	systemDetails := flags.Bool("system-details", false, "")
 	var networkInterfaces stringValues
 	flags.Var(&networkInterfaces, "network-interface", "")
@@ -305,7 +322,7 @@ func parseConfig(arguments []string) (config, error) {
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 {
 		return config{}, errInvalidArguments
 	}
-	listenSet, hostSet, allowClientSet, allowAllTailnetSet, urlSet, dockerURLSet := false, false, false, false, false, false
+	listenSet, hostSet, allowClientSet, allowAllTailnetSet, urlSet, dockerURLSet, logsSet, llamaLogProxySet, logModelSet := false, false, false, false, false, false, false, false, false
 	flags.Visit(func(flag *flag.Flag) {
 		switch flag.Name {
 		case "listen":
@@ -320,12 +337,42 @@ func parseConfig(arguments []string) (config, error) {
 			urlSet = true
 		case "docker-proxy-url":
 			dockerURLSet = true
+		case "logs":
+			logsSet = true
+		case "llama-log-proxy":
+			llamaLogProxySet = true
+		case "log-model":
+			logModelSet = true
 		}
 	})
 	if (*tailnet && (*dev || !listenSet || !hostSet || (*allowAllTailnet == allowClientSet))) || (!*tailnet && (hostSet || allowClientSet || allowAllTailnetSet)) {
 		return config{}, errInvalidArguments
 	}
-	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, docker: *docker, dockerProxyURL: *dockerProxyURL, systemDetails: *systemDetails, tailnet: *tailnet, allowAllTailnet: *allowAllTailnet}
+	parsed := config{demo: *demo, dev: *dev, gpu: *gpu, llamaSwap: *llamaSwap, llamaSwapURL: *llamaSwapURL, docker: *docker, dockerProxyURL: *dockerProxyURL, logs: *logsEnabled, llamaLogProxy: *llamaLogProxy, systemDetails: *systemDetails, tailnet: *tailnet, allowAllTailnet: *allowAllTailnet}
+	if (llamaLogProxySet || logModelSet) && (!*logsEnabled || !*llamaSwap) {
+		return config{}, errInvalidArguments
+	}
+	if logsSet && !*logsEnabled {
+		return config{}, errInvalidArguments
+	}
+	if len(logModels) > logs.MaxConfiguredItems {
+		return config{}, errInvalidArguments
+	}
+	seenLogAliases, seenLogReferences := map[string]struct{}{}, map[string]struct{}{}
+	for _, value := range logModels {
+		alias, reference, ok := strings.Cut(value, "=")
+		if !ok || !logs.ValidAlias(alias) || !logs.ValidModelReference(reference) {
+			return config{}, errInvalidArguments
+		}
+		if _, exists := seenLogAliases[alias]; exists {
+			return config{}, errInvalidArguments
+		}
+		if _, exists := seenLogReferences[reference]; exists {
+			return config{}, errInvalidArguments
+		}
+		seenLogAliases[alias], seenLogReferences[reference] = struct{}{}, struct{}{}
+		parsed.logModels = append(parsed.logModels, logModel{alias: alias, reference: reference})
+	}
 	if len(networkInterfaces) > 0 && !*systemDetails {
 		return config{}, errInvalidArguments
 	}
