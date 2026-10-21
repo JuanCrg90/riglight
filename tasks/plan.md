@@ -30,10 +30,13 @@ sufficient for this milestone. The application module may initially be named
 Checked against official registries and upstream repositories on 2026-10-18.
 These are proposed exact pins, not installed dependencies. Recheck advisories
 and resolve transitive dependencies at scaffolding; never silently upgrade.
+The Go row includes the subsequent security patch from 1.27.2 to 1.27.3 for
+GO-2026-6809 during the log increment; historical verification records retain
+their originally tested versions. mise.toml and go.mod enforce the current pin.
 
 | Component | Proposed pin |
 | --- | --- |
-| Go | 1.27.2 |
+| Go | 1.27.3 |
 | Node, LTS | 24.22.0 |
 | pnpm | 12.14.0 |
 | gopsutil/v4 | v4.26.9 |
