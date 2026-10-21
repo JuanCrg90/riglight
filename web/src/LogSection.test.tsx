@@ -106,6 +106,7 @@ describe('LogSection', () => {
     await screen.findByText(/source mode changed/i);
     expect(FakeEventSource.created).toHaveLength(1);
     expect(screen.getByText('DEMO only')).toBeVisible();
+    expect(screen.getByText('DEMO · retained output')).toBeVisible();
   });
 
   it('clears and isolates source changes, requiring another explicit Start', async () => {
@@ -134,6 +135,26 @@ describe('LogSection', () => {
     act(() => es.onerror?.(new Event('error')));
     expect(es.close).toHaveBeenCalled();
     expect(FakeEventSource.created).toHaveLength(1);
+  });
+
+  it('follows only within the log pane and uses instant scrolling for reduced motion', async () => {
+    const paneScroll = vi.fn();
+    const pageScroll = vi.fn();
+    const oldDescriptor = Object.getOwnPropertyDescriptor(HTMLOListElement.prototype, 'scrollTo');
+    Object.defineProperty(HTMLOListElement.prototype, 'scrollTo', { configurable: true, value: paneScroll });
+    vi.stubGlobal('scrollTo', pageScroll);
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+    try {
+      setup(); render(<LogSection />); const es = await startViewer();
+      paneScroll.mockClear();
+      act(() => es.emit('log', frame(1, 'tail')));
+      const pane = screen.getByRole('list', { name: 'Log output' });
+      expect(paneScroll).toHaveBeenCalledWith({ top: pane.scrollHeight, behavior: 'auto' });
+      expect(pageScroll).not.toHaveBeenCalled();
+    } finally {
+      if (oldDescriptor) Object.defineProperty(HTMLOListElement.prototype, 'scrollTo', oldDescriptor);
+      else delete (HTMLOListElement.prototype as Partial<HTMLOListElement>).scrollTo;
+    }
   });
 
   it('preserves the sequence guard after Clear and closes invalid/misbinding frames', async () => {

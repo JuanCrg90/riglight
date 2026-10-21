@@ -9,6 +9,7 @@ export function LogSection() {
   const [expanded, setExpanded] = useState(false);
   const [sources, setSources] = useState<LogSource[]>([]);
   const [catalogMode, setCatalogMode] = useState<CatalogMode | null>(null);
+  const [bufferMode, setBufferMode] = useState<LogMode | null>(null);
   const [sourceId, setSourceId] = useState('');
   const [state, setState] = useState<State>('CLOSED');
   const [buffer, setBuffer] = useState<BoundedLines>({ lines: [], bytes: 0 });
@@ -22,7 +23,6 @@ export function LogSection() {
   const epoch = useRef(0);
   const seq = useRef(0);
   const session = useRef(0);
-  const bufferMode = useRef<LogMode | null>(null);
 
   const closeStream = () => { epoch.current++; eventSource.current?.close(); eventSource.current = null; abort.current?.abort(); abort.current = null; };
   const clearLines = () => { setBuffer({ lines: [], bytes: 0 }); setFilter(''); };
@@ -52,16 +52,16 @@ export function LogSection() {
   const start = async (resume = false) => {
     if (!sourceId || state === 'OPENING' || state === 'STREAMING') return;
     closeStream();
-    if (!resume) { clearLines(); bufferMode.current = null; }
+    if (!resume) { clearLines(); setBufferMode(null); }
     seq.current = 0; setWarning(false); setMessage('');
     const id = epoch.current; setState('OPENING');
     const freshCatalog = await loadCatalog(id);
     if (!freshCatalog || id !== epoch.current || freshCatalog.mode === 'DISABLED' || !freshCatalog.sources.some(source => source.id === sourceId)) { if (id === epoch.current) setState('UNAVAILABLE'); return; }
     const streamMode: LogMode = freshCatalog.mode;
-    if (resume && bufferMode.current !== null && bufferMode.current !== streamMode) {
+    if (resume && bufferMode !== null && bufferMode !== streamMode) {
       setState('UNAVAILABLE'); setMessage('The source mode changed. Clear the paused buffer and start a new session.'); return;
     }
-    bufferMode.current = streamMode;
+    setBufferMode(streamMode);
     const sessionId = ++session.current;
     const currentSource = sourceId;
     const streamEpoch = ++epoch.current;
@@ -85,9 +85,9 @@ export function LogSection() {
     es.addEventListener('log', onLog); es.addEventListener('log-status', onStatus);
     es.onerror = () => { if (streamEpoch === epoch.current && eventSource.current === es) { es.close(); eventSource.current = null; setState('UNAVAILABLE'); setMessage('The log stream disconnected. Start again to reconnect.'); } };
   };
-  const changeSource = (id: string) => { closeStream(); clearLines(); bufferMode.current = null; seq.current = 0; setSourceId(id); setState('CLOSED'); setWarning(false); };
+  const changeSource = (id: string) => { closeStream(); clearLines(); setBufferMode(null); seq.current = 0; setSourceId(id); setState('CLOSED'); setWarning(false); };
   const pause = () => { closeStream(); setState('PAUSED'); };
-  const close = () => { closeStream(); clearLines(); setSources([]); setCatalogMode(null); setSourceId(''); bufferMode.current = null; setState('CLOSED'); setWarning(false); setExpanded(false); setMessage(''); };
+  const close = () => { closeStream(); clearLines(); setSources([]); setCatalogMode(null); setSourceId(''); setBufferMode(null); setState('CLOSED'); setWarning(false); setExpanded(false); setMessage(''); };
 
   useEffect(() => {
     const pane = logPane.current;
@@ -96,9 +96,10 @@ export function LogSection() {
   }, [buffer, follow]);
   useEffect(() => () => { closeStream(); }, []);
   const filtered = buffer.lines.filter(({ frame }) => !filter || frame.text.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
+  const displayMode = buffer.lines.length > 0 && bufferMode ? `${bufferMode} · retained output` : catalogMode ? `${catalogMode} · Manual, ephemeral stream` : 'Manual, ephemeral stream';
 
   return <section className="logs-section" aria-labelledby="logs-title">
-    <div className="section-heading"><h2 id="logs-title">Logs inspector</h2><span>{catalogMode ? `${catalogMode} · Manual, ephemeral stream` : 'Manual, ephemeral stream'}</span></div>
+    <div className="section-heading"><h2 id="logs-title">Logs inspector</h2><span>{displayMode}</span></div>
     {!expanded ? <button type="button" className="logs-open" onClick={openInspector} aria-label="Open logs inspector">Open logs inspector</button> : <>
       <p className="logs-warning">Log text may contain credentials, prompts, paths, addresses, or configuration. It is not guaranteed to be redacted. Start only when you are ready to view it.</p>
       {message && <p role="status" className="logs-message">{message}</p>}
