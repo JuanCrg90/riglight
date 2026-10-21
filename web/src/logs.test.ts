@@ -53,6 +53,12 @@ describe('strict log protocol parsers', () => {
   it('strictly validates automatic target envelopes, revisions and target references', () => {
     const target = { schemaVersion: 1, mode: 'DEMO', sourceId: 'model.loaded', revision: 1, state: 'FOLLOWING', model: 'example-chat' };
     expect(parseLogTarget(JSON.stringify(target), 'DEMO', 'model.loaded', 0)).toEqual(target);
+    for (const model of ['Qwen3.6-35B-A3B', '.model', '_model', '-model']) {
+      expect(parseLogTarget(JSON.stringify({ ...target, model }), 'DEMO', 'model.loaded', 0)?.model).toBe(model);
+    }
+    for (const model of ['.', '..', 'proxy', 'upstream', 'http', 'unsafe/name', 'unsafe\\\\name', 'unsafe%2Fname', 'mödèl', 'model\nname']) {
+      expect(parseLogTarget(JSON.stringify({ ...target, model }), 'DEMO', 'model.loaded', 0)).toBeNull();
+    }
     for (const reserved of ['proxy', 'upstream', 'http']) {
       expect(parseLogTarget(JSON.stringify({ ...target, model: reserved }), 'DEMO', 'model.loaded', 0)).toBeNull();
     }

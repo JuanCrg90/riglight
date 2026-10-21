@@ -77,9 +77,10 @@ describe('LogSection', () => {
     expect(screen.queryByText('blocked')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Filter lines')).toHaveValue('');
     expect(screen.getByText(/Loaded model waiting/)).toBeVisible();
-    act(() => { stream.emit('log-target', target(3, 'FOLLOWING', 'model-b')); stream.emit('log', frame(2, 'B line', 'model.loaded')); });
+    act(() => { stream.emit('log-target', target(3, 'FOLLOWING', 'Qwen3.6-35B-A3B')); stream.emit('log', frame(2, 'B line', 'model.loaded')); });
     expect(screen.queryByText('A line')).not.toBeInTheDocument();
     expect(screen.getByText('B line')).toBeVisible();
+    expect(screen.getByText(/Following Qwen3.6-35B-A3B/)).toBeVisible();
     expect(FakeEventSource.created).toHaveLength(1);
   });
 
