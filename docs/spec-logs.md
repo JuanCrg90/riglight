@@ -153,7 +153,7 @@ handlers, helper-only Docker reader, strict React parser and inspector. Keep
 privileged imports out of the main executable's linked dependency graph.
 
 Synthetic tests cover disabled/demo construction, exact upstream method/path/query,
-redirects, reserved/path escapes, unknown sources, secret inspect sentinels,
+redirects, reserved/path escapes, unknown sources, private-inspect markers,
 framed/TTY/split/invalid UTF-8/overlong data, per-stream line assembly, all status
 transitions, malformed helper frames, byte/time/line/session limits, slot release,
 slow/quiet/blocked sources, cancellation/no leaks, shutdown, and metric independence.

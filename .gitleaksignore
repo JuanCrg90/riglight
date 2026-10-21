@@ -1,0 +1,3 @@
+# Historical test-coverage prose falsely matched across a newline.
+# No credential; exact commit/file/rule/line only, never a broad rule exclusion.
+95e98797a79512f2104a544716db026ee63791e8:docs/spec-logs.md:generic-api-key:141
