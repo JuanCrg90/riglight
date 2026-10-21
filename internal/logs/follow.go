@@ -87,6 +87,7 @@ type FollowLoadedProvider struct {
 	newTimer  func(time.Duration) FollowLoadedTimer
 	newReader func(string, *InputBudget) (Provider, error)
 	freshness time.Duration
+	latest    func() llamaswap.Sample
 }
 
 func NewFollowLoadedProvider(options FollowLoadedOptions) (*FollowLoadedProvider, error) {
@@ -105,7 +106,7 @@ func NewFollowLoadedProvider(options FollowLoadedOptions) (*FollowLoadedProvider
 	if options.Freshness <= 0 {
 		return nil, ErrInvalid
 	}
-	return &FollowLoadedProvider{hub: options.Hub, mode: options.Mode, now: options.Now, newTimer: options.NewTimer, newReader: options.NewReader, freshness: options.Freshness}, nil
+	return &FollowLoadedProvider{hub: options.Hub, mode: options.Mode, now: options.Now, newTimer: options.NewTimer, newReader: options.NewReader, freshness: options.Freshness, latest: options.Hub.Latest}, nil
 }
 
 // Stream preserves Provider compatibility for callers that do not expose the
@@ -130,7 +131,6 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 	budget := NewInputBudget()
 	var timer FollowLoadedTimer
 	var timerUpdates <-chan time.Time
-	var latest llamaswap.Sample
 	var active *followLoadedReader
 	var previous Target
 	hasPrevious := false
@@ -167,7 +167,6 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 	}()
 
 	apply := func(sample llamaswap.Sample) error {
-		latest = sample
 		selection, remaining := p.selectTarget(sample)
 		stopTimer()
 		if remaining > 0 {
@@ -224,19 +223,20 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 		}
 		select {
 		case <-timerUpdates:
-			if err := apply(latest); err != nil {
+			if err := apply(p.latest()); err != nil {
 				return err
 			}
 			continue
 		default:
 		}
 		// The clock is checked at the line boundary as well as by the timer.
-		// This prevents a concurrently ready timer from letting stale output win
-		// a select race.
+		// Each decision reads the hub's atomic latest copy so a fresh update
+		// cannot lose a race with an already-ready expiry notification.
 		if active != nil && hasPrevious {
-			selection, _ := p.selectTarget(latest)
+			current := p.latest()
+			selection, _ := p.selectTarget(current)
 			if !sameTarget(previous, selection) {
-				if err := apply(latest); err != nil {
+				if err := apply(current); err != nil {
 					return err
 				}
 				continue
@@ -268,7 +268,7 @@ func (p *FollowLoadedProvider) StreamWithTarget(ctx context.Context, ready func(
 				return err
 			}
 		case <-timerUpdates:
-			if err := apply(latest); err != nil {
+			if err := apply(p.latest()); err != nil {
 				return err
 			}
 		case line := <-lines:

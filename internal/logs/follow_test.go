@@ -28,6 +28,22 @@ func (c *followTestClock) Set(value time.Time) {
 	c.mu.Unlock()
 }
 
+type followTestLatest struct {
+	mu     sync.Mutex
+	sample llamaswap.Sample
+}
+
+func (l *followTestLatest) Sample() llamaswap.Sample {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.sample
+}
+func (l *followTestLatest) Set(sample llamaswap.Sample) {
+	l.mu.Lock()
+	l.sample = sample
+	l.mu.Unlock()
+}
+
 type followTestTimer struct{ updates chan time.Time }
 
 func (t *followTestTimer) C() <-chan time.Time { return t.updates }
@@ -173,6 +189,57 @@ func TestFollowLoadedExpiresBeforeQueuedLine(t *testing.T) {
 	case event := <-events:
 		t.Fatalf("unexpected post-expiry event %q", event)
 	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestFollowLoadedExpiryUsesNewestSampleWithoutReopening(t *testing.T) {
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	clock := &followTestClock{now: at}
+	initial := availableLoaded(t, at, llamaswap.ModeLive, "alpha")
+	hub, err := llamaswap.NewHub(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hub.Close()
+	timer := &followTestTimer{updates: make(chan time.Time, 1)}
+	created := make(chan *followReader, 2)
+	provider, err := NewFollowLoadedProvider(FollowLoadedOptions{Hub: hub, Mode: ModeLive, Now: clock.Now, NewTimer: func(time.Duration) FollowLoadedTimer { return timer }, NewReader: func(string, *InputBudget) (Provider, error) {
+		reader := newFollowReader()
+		created <- reader
+		return reader, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest := &followTestLatest{sample: initial}
+	provider.latest = latest.Sample
+	targets := make(chan Target, 2)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		_ = provider.StreamWithTarget(ctx, func() error { return nil }, func(target Target) error { targets <- target; return nil }, func(Stream, string, bool) error { return nil })
+	}()
+	<-targets
+	reader := <-created
+	<-reader.started
+	freshAt := at.Add(5 * time.Second)
+	latest.Set(availableLoaded(t, freshAt, llamaswap.ModeLive, "alpha"))
+	clock.Set(at.Add(6 * time.Second))
+	timer.updates <- clock.Now()
+	select {
+	case target := <-targets:
+		t.Fatalf("old expiry reopened unchanged target %#v", target)
+	case <-time.After(20 * time.Millisecond):
+	}
+	select {
+	case <-created:
+		t.Fatal("old expiry opened another reader")
+	default:
+	}
+	select {
+	case <-reader.cancelled:
+		t.Fatal("old expiry cancelled the fresh reader")
+	default:
 	}
 }
 
