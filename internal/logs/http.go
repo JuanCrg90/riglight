@@ -1,0 +1,98 @@
+package logs
+
+import (
+	"context"
+	"mime"
+	"net"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const maxHeaderBytes = 8 << 10
+
+// CanonicalBaseURL accepts exactly one literal loopback origin, with no path,
+// credentials, query, fragment, hostname, or proxy behavior.
+func CanonicalBaseURL(raw string) (string, error) {
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Opaque != "" || parsed.User != nil || parsed.ForceQuery || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" {
+		return "", ErrInvalid
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", ErrInvalid
+	}
+	host := parsed.Hostname()
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() || strings.Contains(host, "%") {
+		return "", ErrInvalid
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return "", ErrInvalid
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: net.JoinHostPort(ip.String(), strconv.Itoa(port))}).String(), nil
+}
+
+func newHTTPClient(dial func(context.Context, string, string) (net.Conn, error)) *http.Client {
+	transport := &http.Transport{
+		Proxy:                  nil,
+		DisableCompression:     true,
+		MaxResponseHeaderBytes: maxHeaderBytes,
+		ResponseHeaderTimeout:  10 * time.Second,
+		DialContext:            dial,
+	}
+	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+// NewUnixHTTPClient creates a proxy-free client restricted by a caller-owned
+// Unix-socket dialer. It is used only by the privileged helper package.
+func NewUnixHTTPClient(socket string) *http.Client {
+	dialer := &net.Dialer{}
+	return newHTTPClient(func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, "unix", socket)
+	})
+}
+
+type PlainHTTPProvider struct {
+	endpoint string
+	client   *http.Client
+}
+
+func NewPlainHTTPProvider(endpoint string) *PlainHTTPProvider {
+	return &PlainHTTPProvider{endpoint: endpoint, client: newHTTPClient((&net.Dialer{}).DialContext)}
+}
+
+func (p *PlainHTTPProvider) CloseIdleConnections() { p.client.CloseIdleConnections() }
+func (p *PlainHTTPProvider) Stream(ctx context.Context, ready func() error, emit Emit) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint, nil)
+	if err != nil {
+		return ErrInvalid
+	}
+	response, err := p.client.Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return ErrUnavailable
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed || response.StatusCode == http.StatusNotImplemented {
+		return ErrUnsupported
+	}
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") == "" || !isPlainContentType(response.Header.Get("Content-Type")) {
+		return ErrInvalid
+	}
+	if err := ready(); err != nil {
+		return err
+	}
+	return ConsumePlain(ctx, response.Body, StreamOutput, emit)
+}
+
+func isPlainContentType(value string) bool {
+	mediaType, _, err := mimeParseMediaType(value)
+	return err == nil && mediaType == "text/plain"
+}
+
+var mimeParseMediaType = mime.ParseMediaType
