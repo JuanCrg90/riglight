@@ -113,6 +113,71 @@ func TestLogProviderBoundsQuietInspectBody(t *testing.T) {
 	}
 }
 
+func TestLogProviderContentTypeMatchesTTYAndFraming(t *testing.T) {
+	framed := dockerFrame(1, []byte("café\n"))
+	plain := []byte("café\n")
+	cases := []struct {
+		name        string
+		contentType string
+		tty         bool
+		body        []byte
+		wantErr     bool
+	}{
+		{name: "raw stream multiplexed", contentType: "application/vnd.docker.raw-stream", body: framed},
+		{name: "octet stream multiplexed", contentType: "application/octet-stream", body: framed},
+		{name: "multiplexed stream", contentType: "application/vnd.docker.multiplexed-stream", body: framed},
+		{name: "multiplexed stream with valid parameter", contentType: "application/vnd.docker.multiplexed-stream; charset=utf-8", body: framed},
+		{name: "raw stream tty", contentType: "application/vnd.docker.raw-stream", tty: true, body: plain},
+		{name: "octet stream tty", contentType: "application/octet-stream", tty: true, body: plain},
+		{name: "multiplexed stream tty mismatch", contentType: "application/vnd.docker.multiplexed-stream", tty: true, body: framed, wantErr: true},
+		{name: "invalid charset parameter", contentType: `application/vnd.docker.multiplexed-stream; charset="`, body: framed, wantErr: true},
+		{name: "garbage content type", contentType: "not a media type", body: framed, wantErr: true},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			socket, stop := fakeDaemon(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1.44/containers/service/json" {
+					_, _ = io.WriteString(w, `{"Id":"`+testID+`","Name":"/service","Config":{"Tty":`+map[bool]string{true: "true", false: "false"}[test.tty]+`}}`)
+					return
+				}
+				w.Header().Set("Content-Type", test.contentType)
+				_, _ = w.Write(test.body)
+			}))
+			defer stop()
+
+			config, err := NewConfig(socket, "127.0.0.1:9123", []string{"app=service"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider, err := NewLogProvider(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer provider.CloseIdleConnections()
+
+			ready := false
+			var lines []string
+			err = provider.Stream(context.Background(), "app", func() error {
+				ready = true
+				return nil
+			}, func(_ logs.Stream, line string, _ bool) error {
+				lines = append(lines, line)
+				return nil
+			})
+			if test.wantErr {
+				if !errors.Is(err, logs.ErrInvalid) || ready || len(lines) != 0 {
+					t.Fatalf("mismatch accepted: err=%v ready=%v lines=%q", err, ready, lines)
+				}
+				return
+			}
+			if err != nil || !ready || len(lines) != 1 || lines[0] != "café" {
+				t.Fatalf("stream = err %v, ready %v, lines %q", err, ready, lines)
+			}
+		})
+	}
+}
+
 func dockerFrame(stream byte, payload []byte) []byte {
 	frame := make([]byte, 8+len(payload))
 	frame[0] = stream

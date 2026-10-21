@@ -124,7 +124,7 @@ func (p *LogProvider) stream(ctx context.Context, inspect logInspect, ready func
 	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed || response.StatusCode == http.StatusNotImplemented {
 		return logs.ErrUnsupported
 	}
-	if response.StatusCode != http.StatusOK || !dockerContentType(response.Header.Get("Content-Type")) {
+	if response.StatusCode != http.StatusOK || !dockerContentType(response.Header.Get("Content-Type"), *inspect.Config.TTY) {
 		return logs.ErrInvalid
 	}
 	if err := ready(); err != nil {
@@ -132,9 +132,15 @@ func (p *LogProvider) stream(ctx context.Context, inspect logInspect, ready func
 	}
 	return logs.ConsumeDocker(ctx, response.Body, *inspect.Config.TTY, emit)
 }
-func dockerContentType(value string) bool {
+func dockerContentType(value string, tty bool) bool {
 	media, _, err := mime.ParseMediaType(value)
-	return err == nil && (media == "application/vnd.docker.raw-stream" || media == "application/octet-stream")
+	if err != nil {
+		return false
+	}
+	if media == "application/vnd.docker.raw-stream" || media == "application/octet-stream" {
+		return true
+	}
+	return media == "application/vnd.docker.multiplexed-stream" && !tty
 }
 func (p *LogProvider) get(ctx context.Context, path string) (*http.Response, func(), error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://docker"+path, nil)
