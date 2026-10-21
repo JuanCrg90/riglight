@@ -58,7 +58,7 @@ func TestValidateCatalogRejectsDuplicatesAndOversizeValues(t *testing.T) {
 	if err := ValidateCatalog(valid); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("duplicate = %v", err)
 	}
-	if ValidModelReference("proxy") || ValidModelReference("author/model") || !ValidModelReference("model-1") {
+	if ValidModelReference("proxy") || ValidModelReference(".") || ValidModelReference("..") || ValidModelReference("author/model") || !ValidModelReference("model-1") {
 		t.Fatal("model reference policy")
 	}
 	for _, catalog := range []Catalog{

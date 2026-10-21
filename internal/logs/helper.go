@@ -11,14 +11,11 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
-type helperCatalogWire struct {
-	SchemaVersion int      `json:"schemaVersion"`
-	Enabled       bool     `json:"enabled"`
-	Aliases       []string `json:"aliases"`
-}
+var catalogTimeout = 2 * time.Second
 
 // HelperDockerCatalog is the unprivileged dashboard-side view of the helper.
 type HelperDockerCatalog struct {
@@ -31,15 +28,18 @@ func NewHelperDockerCatalog(raw string) (*HelperDockerCatalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &HelperDockerCatalog{base: base, client: newHTTPClient((&net.Dialer{}).DialContext)}, nil
+	dialer := &net.Dialer{Timeout: openingTimeout}
+	return &HelperDockerCatalog{base: base, client: newHTTPClient(dialer.DialContext)}, nil
 }
 func (h *HelperDockerCatalog) CloseIdleConnections() { h.client.CloseIdleConnections() }
 func (h *HelperDockerCatalog) catalog(ctx context.Context) ([]string, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, h.base+"/api/v1/log-sources", nil)
+	catalogContext, cancel := context.WithTimeout(ctx, catalogTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(catalogContext, http.MethodGet, h.base+"/api/v1/log-sources", nil)
 	if err != nil {
 		return nil, ErrInvalid
 	}
-	response, finish, err := OpenHTTP(ctx, h.client, request)
+	response, finish, err := OpenHTTP(catalogContext, h.client, request)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -59,27 +59,21 @@ func (h *HelperDockerCatalog) catalog(ctx context.Context) ([]string, error) {
 	if err != nil || len(body) > MaxCatalogBytes {
 		return nil, ErrInvalid
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	var wire helperCatalogWire
-	if err := decoder.Decode(&wire); err != nil {
+	enabled, aliases, ok := parseHelperCatalog(body)
+	if !ok {
 		return nil, ErrInvalid
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) || wire.SchemaVersion != SchemaVersion || wire.Aliases == nil {
-		return nil, ErrInvalid
-	}
-	if !wire.Enabled {
-		if len(wire.Aliases) != 0 {
+	if !enabled {
+		if len(aliases) != 0 {
 			return nil, ErrInvalid
 		}
 		return []string{}, nil
 	}
-	if len(wire.Aliases) > MaxConfiguredItems {
+	if len(aliases) > MaxConfiguredItems {
 		return nil, ErrInvalid
 	}
 	seen := map[string]struct{}{}
-	for _, alias := range wire.Aliases {
+	for _, alias := range aliases {
 		if !ValidAlias(alias) {
 			return nil, ErrInvalid
 		}
@@ -88,7 +82,7 @@ func (h *HelperDockerCatalog) catalog(ctx context.Context) ([]string, error) {
 		}
 		seen[alias] = struct{}{}
 	}
-	return wire.Aliases, nil
+	return aliases, nil
 }
 
 // CompositeCatalog keeps optional helper failures from hiding independent llama
@@ -175,7 +169,7 @@ func (p *helperDockerProvider) Stream(ctx context.Context, ready func() error, e
 	if err := ready(); err != nil {
 		return err
 	}
-	return readHelperSSE(ctx, response.Body, p.alias, emit)
+	return readHelperSSE(ctx, response.Body, p.sourceID, emit)
 }
 func isEventStream(value string) bool {
 	media, _, err := mime.ParseMediaType(value)
@@ -183,22 +177,26 @@ func isEventStream(value string) bool {
 }
 
 func readHelperSSE(ctx context.Context, body io.Reader, source string, emit Emit) error {
+	if !validSourceAlias(source, "docker.") {
+		return ErrInvalid
+	}
 	reader := bufio.NewReaderSize(NewBudgetReader(body), 4096)
 	var event, data string
 	var sequence int64
-	opening, streaming := false, false
+	opening, streaming, frameBytes := false, false, 0
 	for {
-		line, err := readSSELine(reader)
+		line, bytesRead, err := readSSELine(reader)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
 			if errors.Is(err, ErrByteLimit) {
 				return ErrByteLimit
 			}
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			return ErrInvalid
+		}
+		frameBytes += bytesRead
+		if frameBytes > MaxWireBytes {
 			return ErrInvalid
 		}
 		if line != "" {
@@ -219,8 +217,8 @@ func readHelperSSE(ctx context.Context, body io.Reader, source string, emit Emit
 		}
 		switch event {
 		case "log":
-			var value Event
-			if !streaming || !strictJSON([]byte(data), &value) || value.SchemaVersion != SchemaVersion || value.Mode != ModeLive || value.SourceID != source || value.Seq != sequence+1 || value.Seq <= 0 || !utf8.ValidString(value.Text) || len(value.Text) > MaxTextBytes || (value.Stream != StreamOutput && value.Stream != StreamStdout && value.Stream != StreamStderr) {
+			value, ok := parseHelperEvent([]byte(data))
+			if !streaming || !ok || value.Mode != ModeLive || value.SourceID != source || value.Seq != sequence+1 || value.Seq <= 0 || !utf8.ValidString(value.Text) || len(value.Text) > MaxTextBytes || (value.Stream != StreamOutput && value.Stream != StreamStdout && value.Stream != StreamStderr) {
 				return ErrInvalid
 			}
 			sequence = value.Seq
@@ -228,8 +226,8 @@ func readHelperSSE(ctx context.Context, body io.Reader, source string, emit Emit
 				return err
 			}
 		case "log-status":
-			var value Status
-			if !strictJSON([]byte(data), &value) || !validRemoteStatus(value, source) {
+			value, ok := parseHelperStatus([]byte(data))
+			if !ok || !validRemoteStatus(value, source) {
 				return ErrInvalid
 			}
 			switch value.State {
@@ -257,34 +255,179 @@ func readHelperSSE(ctx context.Context, body io.Reader, source string, emit Emit
 		default:
 			return ErrInvalid
 		}
-		event, data = "", ""
+		event, data, frameBytes = "", "", 0
 	}
 }
-func readSSELine(reader *bufio.Reader) (string, error) {
+
+func readSSELine(reader *bufio.Reader) (string, int, error) {
 	var line []byte
 	for {
 		part, err := reader.ReadSlice('\n')
 		if len(line)+len(part) > MaxWireBytes {
-			return "", ErrInvalid
+			return "", 0, ErrInvalid
 		}
 		line = append(line, part...)
 		if err == nil {
-			return strings.TrimSuffix(strings.TrimSuffix(string(line), "\n"), "\r"), nil
+			return strings.TrimSuffix(strings.TrimSuffix(string(line), "\n"), "\r"), len(line), nil
 		}
 		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
 		}
-		return "", err
+		if errors.Is(err, io.EOF) && len(line) != 0 {
+			return "", 0, ErrInvalid
+		}
+		return "", 0, err
 	}
 }
-func strictJSON(data []byte, target any) bool {
+
+func parseHelperCatalog(data []byte) (bool, []string, bool) {
+	fields, ok := exactObject(data, "schemaVersion", "enabled", "aliases")
+	if !ok || !exactInt(fields["schemaVersion"], SchemaVersion) {
+		return false, nil, false
+	}
+	enabled, ok := exactBool(fields["enabled"])
+	if !ok {
+		return false, nil, false
+	}
+	aliases, ok := exactStrings(fields["aliases"])
+	if !ok {
+		return false, nil, false
+	}
+	return enabled, aliases, true
+}
+func parseHelperEvent(data []byte) (Event, bool) {
+	fields, ok := exactObject(data, "schemaVersion", "mode", "sourceId", "seq", "text", "stream", "truncated")
+	if !ok || !exactInt(fields["schemaVersion"], SchemaVersion) {
+		return Event{}, false
+	}
+	mode, ok := exactString(fields["mode"])
+	if !ok {
+		return Event{}, false
+	}
+	source, ok := exactString(fields["sourceId"])
+	if !ok {
+		return Event{}, false
+	}
+	seq, ok := exactPositiveInt(fields["seq"])
+	if !ok {
+		return Event{}, false
+	}
+	text, ok := exactString(fields["text"])
+	if !ok {
+		return Event{}, false
+	}
+	stream, ok := exactString(fields["stream"])
+	if !ok {
+		return Event{}, false
+	}
+	truncated, ok := exactBool(fields["truncated"])
+	if !ok {
+		return Event{}, false
+	}
+	return Event{SchemaVersion: SchemaVersion, Mode: Mode(mode), SourceID: source, Seq: seq, Text: text, Stream: Stream(stream), Truncated: truncated}, true
+}
+func parseHelperStatus(data []byte) (Status, bool) {
+	fields, ok := exactObject(data, "schemaVersion", "mode", "sourceId", "state", "reasonCode")
+	if !ok || !exactInt(fields["schemaVersion"], SchemaVersion) {
+		return Status{}, false
+	}
+	mode, ok := exactString(fields["mode"])
+	if !ok {
+		return Status{}, false
+	}
+	source, ok := exactString(fields["sourceId"])
+	if !ok {
+		return Status{}, false
+	}
+	state, ok := exactString(fields["state"])
+	if !ok {
+		return Status{}, false
+	}
+	if bytes.Equal(bytes.TrimSpace(fields["reasonCode"]), []byte("null")) {
+		return Status{SchemaVersion: SchemaVersion, Mode: Mode(mode), SourceID: source, State: State(state)}, true
+	}
+	reason, ok := exactString(fields["reasonCode"])
+	if !ok {
+		return Status{}, false
+	}
+	value := Reason(reason)
+	return Status{SchemaVersion: SchemaVersion, Mode: Mode(mode), SourceID: source, State: State(state), ReasonCode: &value}, true
+}
+func exactObject(data []byte, required ...string) (map[string]json.RawMessage, bool) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(target) != nil {
-		return false
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, false
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return nil, false
+	}
+	fields := make(map[string]json.RawMessage, len(required))
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, isKey := token.(string)
+		if err != nil || !isKey {
+			return nil, false
+		}
+		if _, exists := fields[key]; exists {
+			return nil, false
+		}
+		var value json.RawMessage
+		if decoder.Decode(&value) != nil {
+			return nil, false
+		}
+		fields[key] = value
+	}
+	token, err = decoder.Token()
+	if err != nil {
+		return nil, false
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '}' || len(fields) != len(required) {
+		return nil, false
+	}
+	for _, key := range required {
+		if _, exists := fields[key]; !exists {
+			return nil, false
+		}
 	}
 	var extra any
-	return errors.Is(decoder.Decode(&extra), io.EOF)
+	return fields, errors.Is(decoder.Decode(&extra), io.EOF)
+}
+func exactString(raw json.RawMessage) (string, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) < 2 || raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return "", false
+	}
+	var value string
+	return value, json.Unmarshal(raw, &value) == nil
+}
+func exactBool(raw json.RawMessage) (bool, bool) {
+	raw = bytes.TrimSpace(raw)
+	if bytes.Equal(raw, []byte("true")) {
+		return true, true
+	}
+	if bytes.Equal(raw, []byte("false")) {
+		return false, true
+	}
+	return false, false
+}
+func exactInt(raw json.RawMessage, want int) bool {
+	raw = bytes.TrimSpace(raw)
+	var value int
+	return !bytes.Equal(raw, []byte("null")) && json.Unmarshal(raw, &value) == nil && value == want
+}
+func exactPositiveInt(raw json.RawMessage) (int64, bool) {
+	raw = bytes.TrimSpace(raw)
+	var value int64
+	return value, !bytes.Equal(raw, []byte("null")) && json.Unmarshal(raw, &value) == nil && value > 0
+}
+func exactStrings(raw json.RawMessage) ([]string, bool) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || raw[0] != '[' {
+		return nil, false
+	}
+	var values []string
+	return values, json.Unmarshal(raw, &values) == nil && values != nil
 }
 func validRemoteStatus(value Status, source string) bool {
 	if value.SchemaVersion != SchemaVersion || value.Mode != ModeLive || value.SourceID != source {

@@ -16,7 +16,7 @@ func TestConfigAcceptsBoundedUniqueSelectionOnly(t *testing.T) {
 			t.Errorf("accepted unsafe socket/config %q", value)
 		}
 	}
-	for _, values := range [][]string{{"api=service", "api=other"}, {"one=service", "two=service"}, {}} {
+	for _, values := range [][]string{{"api=service", "api=other"}, {"one=service", "two=service"}, {"api=."}, {"api=.."}, {}} {
 		if _, err := NewConfig("/tmp/fake.sock", "127.0.0.1:9123", values); err == nil {
 			t.Errorf("accepted invalid selection %q", values)
 		}

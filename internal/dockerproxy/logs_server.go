@@ -58,7 +58,8 @@ func (s *HTTPServer) logs(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("X-Accel-Buffering", "no")
-	if err := writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: alias, State: logs.StateOpening}); err != nil {
+	sourceID := "docker." + alias
+	if err := writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: sourceID, State: logs.StateOpening}); err != nil {
 		return
 	}
 	seq, started := int64(0), false
@@ -67,13 +68,13 @@ func (s *HTTPServer) logs(w http.ResponseWriter, r *http.Request) {
 			return logs.ErrInvalid
 		}
 		started = true
-		return writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: alias, State: logs.StateStreaming})
+		return writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: sourceID, State: logs.StateStreaming})
 	}, func(stream logs.Stream, text string, truncated bool) error {
 		if !started || !utf8.ValidString(text) || len(text) > logs.MaxTextBytes {
 			return logs.ErrInvalid
 		}
 		seq++
-		return writeLogEvent(w, logs.Event{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: alias, Seq: seq, Text: text, Stream: stream, Truncated: truncated})
+		return writeLogEvent(w, logs.Event{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: sourceID, Seq: seq, Text: text, Stream: stream, Truncated: truncated})
 	})
 	if r.Context().Err() != nil {
 		return
@@ -82,7 +83,7 @@ func (s *HTTPServer) logs(w http.ResponseWriter, r *http.Request) {
 		err = logs.ErrSessionLimit
 	}
 	state, reason := logs.ReasonFor(err)
-	_ = writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: alias, State: state, ReasonCode: reason})
+	_ = writeLogStatus(w, logs.Status{SchemaVersion: logs.SchemaVersion, Mode: logs.ModeLive, SourceID: sourceID, State: state, ReasonCode: reason})
 }
 
 func writeLogStatus(w http.ResponseWriter, status logs.Status) error {

@@ -13,7 +13,7 @@ func TestParseConfigGatesAndValidatesLogSources(t *testing.T) {
 		t.Fatalf("config = %#v, %v", valid, err)
 	}
 	for _, arguments := range [][]string{
-		{"--llama-log-proxy"}, {"--logs", "--llama-log-proxy"}, {"--logs", "--llama-swap", "--log-model", "x=proxy"}, {"--logs", "--llama-swap", "--log-model", "x=author/model"}, {"--logs", "--llama-swap", "--log-model", "x=model", "--log-model", "x=other"},
+		{"--llama-log-proxy"}, {"--logs", "--llama-log-proxy"}, {"--logs", "--llama-swap", "--log-model", "x=proxy"}, {"--logs", "--llama-swap", "--log-model", "x=."}, {"--logs", "--llama-swap", "--log-model", "x=.."}, {"--logs", "--llama-swap", "--log-model", "x=author/model"}, {"--logs", "--llama-swap", "--log-model", "x=model", "--log-model", "x=other"},
 	} {
 		if _, err := parseConfig(arguments); !errors.Is(err, errInvalidArguments) {
 			t.Errorf("parseConfig(%q) = %v", arguments, err)

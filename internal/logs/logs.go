@@ -261,7 +261,7 @@ func ValidAlias(value string) bool {
 }
 
 func ValidModelReference(value string) bool {
-	if len(value) == 0 || len(value) > 128 || strings.Contains(value, "/") || strings.Contains(value, "\\") || strings.Contains(value, "%") {
+	if len(value) == 0 || len(value) > 128 || value == "." || value == ".." || strings.Contains(value, "/") || strings.Contains(value, "\\") || strings.Contains(value, "%") {
 		return false
 	}
 	if value == "proxy" || value == "upstream" || value == "http" {

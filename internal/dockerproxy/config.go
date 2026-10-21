@@ -79,7 +79,7 @@ func validAlias(value string) bool {
 	return true
 }
 func validReference(value string) bool {
-	if len(value) == 0 || len(value) > 128 {
+	if len(value) == 0 || len(value) > 128 || value == "." || value == ".." {
 		return false
 	}
 	for _, c := range value {
