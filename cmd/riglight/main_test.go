@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -334,6 +335,184 @@ func TestDemoSelectionNeverConstructsLivePublisher(t *testing.T) {
 	}
 	if err := publisher.Publish(context.Background(), at); err != nil {
 		t.Fatalf("publish demo sample: %v", err)
+	}
+}
+
+func TestRunTailnetModeRebindsAfterReadinessLoss(t *testing.T) {
+	t.Parallel()
+
+	first, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve first listener: %v", err)
+	}
+	second, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve second listener: %v", err)
+	}
+	defer first.Close()
+	defer second.Close()
+	var readyState atomic.Bool
+	readyState.Store(true)
+	var binds atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runWithAllFactoriesAndTailnetListener(
+			ctx,
+			[]string{"--demo", "--tailnet", "--listen", "100.64.0.10:9090", "--host", "workstation.example.ts.net:9090", "--allow-client", "100.64.0.20"},
+			func(*metrics.Hub) (publisher, error) {
+				return nil, errors.New("live publisher should not be constructed")
+			},
+			defaultNativeGPUPoller,
+			defaultLlamaSwapSource,
+			"linux",
+			func() (tailnetInterfaceState, error) {
+				if readyState.Load() {
+					return tailnetInterfaceState{name: tailnetInterfaceName, up: true, addrs: []netip.Addr{netip.MustParseAddr("100.64.0.10")}}, nil
+				}
+				return tailnetInterfaceState{name: tailnetInterfaceName, up: true}, nil
+			},
+			func(_ context.Context, network, address string) (net.Listener, error) {
+				if network != "tcp" || address != "100.64.0.10:9090" {
+					t.Errorf("listener arguments = %q, %q", network, address)
+				}
+				switch binds.Add(1) - 1 {
+				case 0:
+					return first, nil
+				case 1:
+					return second, nil
+				default:
+					return nil, errors.New("unexpected bind")
+				}
+			},
+		)
+	}()
+	// Tailnet admission rejects this loopback client, so the app answers 403
+	// on both listeners; that still proves the server serves on each one.
+	tailnetHost := "workstation.example.ts.net:9090"
+	waitForHostStatus(t, first.Addr().String(), tailnetHost, http.StatusForbidden)
+	readyState.Store(false)
+	waitForCondition(t, func() bool { return listenerUnreachable(first) })
+	readyState.Store(true)
+	waitForHostStatus(t, second.Addr().String(), tailnetHost, http.StatusForbidden)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run tailnet: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("tailnet shutdown did not complete")
+	}
+	waitForCondition(t, func() bool { return listenerUnreachable(second) })
+}
+
+func TestRunLoopbackModeDoesNotPollReadiness(t *testing.T) {
+	t.Parallel()
+
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve loopback port: %v", err)
+	}
+	address := probe.Addr().String()
+	if err := probe.Close(); err != nil {
+		t.Fatalf("release loopback port: %v", err)
+	}
+	var lookups atomic.Int32
+	var tailnetBinds atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- runWithAllFactoriesAndTailnetListener(
+			ctx,
+			[]string{"--demo", "--listen", address},
+			func(*metrics.Hub) (publisher, error) {
+				return nil, errors.New("live publisher should not be constructed")
+			},
+			defaultNativeGPUPoller,
+			defaultLlamaSwapSource,
+			"linux",
+			func() (tailnetInterfaceState, error) {
+				lookups.Add(1)
+				return tailnetInterfaceState{}, nil
+			},
+			func(context.Context, string, string) (net.Listener, error) {
+				tailnetBinds.Add(1)
+				return nil, errors.New("tailnet listener should not be constructed")
+			},
+		)
+	}()
+	waitForHTTP(t, address)
+	// Wait longer than one readiness poll interval: loopback mode must
+	// never consult the injected tailnet lookup.
+	time.Sleep(2500 * time.Millisecond)
+	if lookups.Load() != 0 {
+		t.Errorf("tailnet lookups in loopback mode = %d, want 0", lookups.Load())
+	}
+	if tailnetBinds.Load() != 0 {
+		t.Errorf("tailnet binds in loopback mode = %d, want 0", tailnetBinds.Load())
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run loopback: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("loopback shutdown did not complete")
+	}
+}
+
+func waitForHostStatus(t *testing.T, address, host string, want int) {
+	t.Helper()
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}}
+	defer client.CloseIdleConnections()
+	for {
+		request, err := http.NewRequest(http.MethodGet, "http://"+address+"/", nil)
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		request.Host = host
+		response, err := client.Do(request)
+		if err == nil {
+			response.Body.Close()
+			if response.StatusCode == want {
+				return
+			}
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("server at %s with host %s did not serve status %d", address, host, want)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func listenerUnreachable(listener net.Listener) bool {
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 50*time.Millisecond)
+	if err != nil {
+		return true
+	}
+	conn.Close()
+	return false
+}
+
+func waitForCondition(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	for {
+		if condition() {
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("condition not reached")
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"riglight/internal/llamaswap"
 	"riglight/internal/logs"
 	"riglight/internal/metrics"
+	"riglight/internal/relisten"
 	"riglight/internal/server"
 	"riglight/internal/systemmetrics"
 	"riglight/web"
@@ -210,11 +211,32 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		IdleTimeout:       time.Minute,
 		MaxHeaderBytes:    8 << 10,
 	}
+	serveError := make(chan error, 1)
+	serveSeen := false
 	defer func() {
+		// In tailnet mode relisten.Run owns the active (possibly rebound)
+		// HTTP server. Wait for its graceful shutdown before stopping the
+		// workers so in-flight streams are not cut short.
+		if config.tailnet && !serveSeen {
+			cancelApplication()
+			<-serveError
+		}
 		shutdownApplication(cancelApplication, httpServer, gpuWorker, llamaSwapWorker, containerWorker, systemWorker)
 	}()
-	serveError := make(chan error, 1)
-	go func() { serveError <- httpServer.Serve(listener) }()
+	if config.tailnet {
+		ready := func() (bool, error) {
+			state, err := lookup()
+			return err == nil && tailnetInterfaceHasAddress(config.listenIP, state), err
+		}
+		bind := func(bindContext context.Context) (net.Listener, error) {
+			return newTailnetListener(bindContext, "tcp", config.listen)
+		}
+		go func() {
+			serveError <- relisten.Run(application, httpServer, listener, ready, bind, func(message string) { _, _ = io.WriteString(os.Stderr, message+"\n") })
+		}()
+	} else {
+		go func() { serveError <- httpServer.Serve(listener) }()
+	}
 	if gpuWorker != nil {
 		gpuWorker.Start(application)
 	}
@@ -228,27 +250,30 @@ func runWithAllFactoriesAndTailnetListener(ctx context.Context, arguments []stri
 		systemWorker.Start(application)
 	}
 
-	if err := publisher.Publish(application, time.Now()); err != nil {
-		return errUnableToStart
-	}
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case err := <-serveError:
-			if errors.Is(err, http.ErrServerClosed) {
-				return nil
-			}
-			return errUnableToStart
-		case tick := <-ticker.C:
-			if err := publisher.Publish(application, tick); err != nil {
-				return errUnableToStart
+	runErr := errUnableToStart
+	if err := publisher.Publish(application, time.Now()); err == nil {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+	runloop:
+		for {
+			select {
+			case <-ctx.Done():
+				runErr = nil
+				break runloop
+			case err := <-serveError:
+				serveSeen = true
+				if errors.Is(err, http.ErrServerClosed) {
+					runErr = nil
+				}
+				break runloop
+			case tick := <-ticker.C:
+				if err := publisher.Publish(application, tick); err != nil {
+					break runloop
+				}
 			}
 		}
 	}
+	return runErr
 }
 
 func shutdownApplication(cancelApplication context.CancelFunc, server *http.Server, gpuWorker *gpuWorker, llamaSwapWorker *llamaSwapWorker, containerWorker *containerWorker, systemWorker *systemWorker) {
